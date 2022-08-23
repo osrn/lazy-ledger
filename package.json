@@ -1,0 +1,39 @@
+{
+    "name": "@osrn/lazy-ledger",
+    "description": "True Block Weight Reward Sharing Plugin for Solar Network",
+    "version": "0.0.1",
+    "homepage": "https://github.com/osrn/lazy-ledger",
+    "contributors": [
+        "osrn <osrnnetwork@gmail.com>"
+    ],
+    "license": "GPL-3.0-or-later",
+    "main": "dist/index.js",
+    "files": [
+        "dist/*.js"
+    ],
+    "scripts": {
+        "prepublishOnly": "pnpm pretest",
+        "pretest": "pnpm lint && pnpm build",
+        "compile": "../../node_modules/typescript/bin/tsc",
+        "build": "pnpm clean && pnpm compile",
+        "build:watch": "pnpm clean && pnpm compile -w",
+        "clean": "del dist",
+        "lint": "../../node_modules/eslint/bin/eslint.js 'src/**/*.ts' --fix"
+    },
+    "dependencies": {
+        "@hapi/boom": "9.1.4",
+        "better-sqlite3": "7.6.2",
+        "cron": "1.8.2",
+        "dayjs": "1.10.7",
+        "delay": "5.0.0",
+        "https": "^1.0.0"
+    },
+    "devDependencies": {
+        "@solar-network/api": "workspace:../../packages/api",
+        "@solar-network/core": "workspace:../../packages/core",
+        "@solar-network/crypto": "workspace:../../packages/crypto",
+        "@solar-network/database": "workspace:../../packages/database",
+        "@solar-network/kernel": "workspace:../../packages/kernel",
+        "@solar-network/transactions": "workspace:../../packages/transactions"
+    }
+}

@@ -1,0 +1,90 @@
+import { Contracts } from "@solar-network/kernel";
+import { Utils } from "@solar-network/crypto";
+
+export interface IConfig extends Record<string, any> {
+    enabled: boolean;
+    delegate: string;           // delegate username
+    plans: Array<IPlan>;        // reward sharing plans
+    passphrase: string;         // delegate wallet mnemonic passphrase
+    secondpass: string;         // delegate wallet second passphrase
+    excludeSelfFrTx: boolean;   // include delegate in transaction if reserve=delegate or delegate self voting
+    mergeAddrsInTx: boolean;    // summarize payments to same recipient
+    reservePaysFees: boolean;   // deduct transaction fee from the first reserve address allocation (at the time of actual payment) | delegate wallet needs sufficient funds for fee otherwise
+    shareEarnedFees: boolean;   // include earned transaction fees (=unburned 10%) in reserve, voter and donee allocations
+    reserveGetsFees: boolean;   // when earned fees are not shared, allocate transaction fees to the first reserve address | stays in delegate wallet otherwise)
+    postInitInstantPay: boolean;// make a payment run immediately after plugin starts following initial sync
+    delegateWallet?: Contracts.State.Wallet; // for internal use
+    delegateAddress?: string;   // for internal use
+    delegatePublicKey?: string; // for internal use
+}
+
+export interface IPlan {
+    height?: number;
+    timestamp?: number | string;// unix timestamp (not Solar epochStamp) | YYYY-MM-DDTHH:mm:ss.sssZ | YYYY-MM-DDTHH:mm:ss.sss+-hh:mm
+    share: number;              // voter share ratio. 0-100, up to 2 decimal places
+    reserves: Array<IPayee>;    // recipients for rewards kept
+    donations: Array<IPayee>;   // recipients for donations
+    // share + reserves[].share + donations[].share = 100 recommended but not enforced! by the plugin
+    mincap: number;             // minimum voter wallet balance eligible for rewards allocation
+    maxcap: number;             // maximum vote weight from an address
+    blacklist: string[];        // addresses blacklisted from rewards allocation
+    payperiod: number;          // Payment cycle - every [0,1,2,3,4,6,8,12,24] hours. 0 if plugin should not handle payment.
+    payoffset: number;          // 0-23. new cycle begins at UTC 00:00 + offset hrs.
+    guardtime: number;          // 0-59. delay in minutes before preparing the payment order at the end of a payment cycle - precaution against block reverts
+}
+
+export interface IPayee {
+    address: string;
+    share: number;
+}
+
+export interface IForgedBlock {
+    round: number; 
+    height: number; 
+    timestamp: number; 
+    delegate: string; 
+    reward: Utils.BigNumber;
+    devfund: Utils.BigNumber;
+    fees: Utils.BigNumber;
+    burnedFees: Utils.BigNumber;
+    votes: Utils.BigNumber;
+    validVotes: Utils.BigNumber;
+    voterCount: number;
+}
+
+export interface IMissedBlock { 
+    round: number; 
+    height: number; 
+    delegate: string; 
+    timestamp: number 
+};
+
+export interface IAllocation {
+    height: number;                 // allocation for block height
+    address: string;                // payee wallet address
+    payeeType: PayeeTypes;          // payee type
+    vote: Utils.BigNumber;          // balance voting for delegate. 0 if reserve|donee
+    validVote: Utils.BigNumber;     // effective voting balance. 0 if reserve|donee
+    shareRatio: number;             // reward share percentage at block height
+    allotment: Utils.BigNumber;     // reward amount allocated
+    booked: number;                 // unix timestamp the allocation done
+    transactionId: string;          // transaction id for payment accepted in pool
+    settled: number;                // unix timestamp transaction forged 
+}
+
+export enum PayeeTypes {
+    reserve = 0,
+    voter,
+    donee
+}
+
+export interface IBill { 
+    y: string, 
+    m: string, 
+    d: string, 
+    q: number, 
+    payeeType: number, 
+    address: string, 
+    duration: number, 
+    allotment: string 
+};

@@ -1,0 +1,14 @@
+# OS files
+.DS_Store
+
+# Config
+
+# Devenv
+*.code-workspace
+dist/
+node_modules/
+
+# Other
+*.txt
+*.backup
+
