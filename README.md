@@ -3,7 +3,7 @@
 Solar Network Core Plugin for Rewards Bookkeeping and Payments Distribution. 
 
 ## Introduction
-Lazy-Ledger is a core plugin utilizing core functions and events to share forging rewards with voters and other stakeholders. Rewards are calculated at each forged block then allocated amongst the stakeholders in accordance with the plan in effect. The ledger is stored as a local database where an entry is recorded for each stakeholder for each block forged with an autorecovery mechanism in place in the event of a block revert or network fork autorecovery.
+Lazy-Ledger is a core plugin utilizing core functions and events to share forging rewards with voters and other stakeholders. Rewards are calculated at each forged block then allocated amongst the stakeholders in accordance with the plan in effect. The ledger is stored as a local database where an entry is recorded for each stakeholder for each block forged with an auto-recovery mechanism in place in the event of a block revert or network fork auto-recovery.
 
 A ledger record is composed of following metadata:
 `block height`, `round`, `forged time`, `block reward`, `earned reward`[^1], `earned fees`[^2], `total valid votes`[^3], `recipient address`, `recipient type`, `valid voting balance`[^3], `share ratio`, `allotment`, `entry timestamp`, `payment transaction id`, `timestamp transaction forged`
@@ -22,7 +22,7 @@ A periodic payment job - governed by the plan parameters - distributes rewards t
 
 The plugin can optionally be used for bookkeeping only; handling payments externally by directly accessing the database[^4].
 
-[^4]: `~/.config/solar-core/{mainnet|testnet}/lazy-ledger.sqlite3`
+[^4]: `.local/share/solar-core/{mainnet|testnet}/lazy-ledger.sqlite`
 
 ## Installation
 ```bash
@@ -145,22 +145,14 @@ Restart relay after configuration set.
 ## Roadmap
 
 - [ ] Voter dashboard
+- [ ] Telegram/Discord integration
+- [ ] Database auto-backup
 
 See the [open issues](https://github.com/osrn/lazy-ledger/issues) for a full list of proposed features (and known issues).
 
 ## Contributing
 
-If you have a suggestion that would make this better, please fork the repo and create a pull request. <br>
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feat/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Added an AmazingFeature'`)
-4. Push to the Branch (`git push origin feat/AmazingFeature`)
-5. Open a Pull Request
-
-You can also simply open an issue with the tag "enhancement".<br>
-
-Any contributions you make are **greatly appreciated**.
+If you have a suggestion for improvement open an issue with the tag "enhancement" or fork & create a pull request. Any contributions are **greatly appreciated**. <br>
 
 ## Credits
 
