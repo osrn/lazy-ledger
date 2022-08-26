@@ -21,7 +21,6 @@
         "lint": "../../node_modules/eslint/bin/eslint.js 'src/**/*.ts' --fix"
     },
     "dependencies": {
-        "@hapi/boom": "9.1.4",
         "better-sqlite3": "7.6.2",
         "cron": "1.8.2",
         "dayjs": "1.10.7",
@@ -29,11 +28,11 @@
         "https": "^1.0.0"
     },
     "devDependencies": {
-        "@solar-network/api": "workspace:../../packages/api",
-        "@solar-network/core": "workspace:../../packages/core",
-        "@solar-network/crypto": "workspace:../../packages/crypto",
-        "@solar-network/database": "workspace:../../packages/database",
-        "@solar-network/kernel": "workspace:../../packages/kernel",
-        "@solar-network/transactions": "workspace:../../packages/transactions"
+        "@solar-network/api": "workspace:*",
+        "@solar-network/core": "workspace:*",
+        "@solar-network/crypto": "workspace:*",
+        "@solar-network/database": "workspace:*",
+        "@solar-network/kernel": "workspace:*",
+        "@solar-network/transactions": "workspace:*"
     }
 }
