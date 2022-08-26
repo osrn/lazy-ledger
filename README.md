@@ -35,6 +35,12 @@ pnpm install && pnpm build
 ## Configuration
 The plugin must be configured by adding a section in `~/.config/solar-core/{mainnet|testnet}/app.json`. Add a new entry to the end of the `plugins` section within the `relay` block. A sample entry is provided [below](#sample-configuration).
 
+This sample config will;
+- allocate 100% to reserve address until block height 100000, paying every 24 hours at 00:10 UTC
+- allocate 50% to voters, 50% to reserve address starting with block 100000 until 2022-08-14T23:59:59.999 UTC, paying every 24 hours at 00:10 UTC
+- allocate 90% to voters, 10% to reserve address between 2022-08-15T00:00:00.000Z and 2022-08-22T00:00:00.000Z, paying every 6 hours at 10 minutes past UTC.
+- allocate 50% to voters, 50% to reserve address after 2022-08-22T00:00:00.000, paying every 24 hours at 00:10 UTC
+
 Payment plans work with milestone logic: higher index properties override the lower ones, where an effective plan is produced against the height and timestamp for a given forged block. 
 
 ### Sample configuration
@@ -46,7 +52,7 @@ Payment plans work with milestone logic: higher index properties override the lo
                 "package": "@osrn/lazy-ledger",
                 "options": {
                     "enabled": true,
-                    "delegate": "delegate",
+                    "delegate": "delegate_username",
                     "passphrase": "delegate wallet mnemonic phrase",
                     "excludeSelfFrTx": true,
                     "mergeAddrsInTx": false,
@@ -71,11 +77,11 @@ Payment plans work with milestone logic: higher index properties override the lo
                         },
                         {
                             "height": 100000,
-                            "share": 50,
+                            "share": 65,
                             "reserves": [
-                                {"address": "reserve_wallet_address", "share": 50}
+                                {"address": "reserve_wallet_address", "share": 35}
                             ]
-                        },
+                        }
                         {
                             "timestamp": "2022-08-15T00:00:00.000Z",
                             "share": 90,
