@@ -1,5 +1,6 @@
 import { Container, Contracts, Providers, Utils as AppUtils } from "@solar-network/kernel";
 import { IConfig, IPlan } from "./interfaces";
+import { baseplan } from "./defaults";
 
 export const configHelperSymbol = Symbol.for("LazyLedger<ConfigHelper>");
 
@@ -70,10 +71,10 @@ export class ConfigHelper {
         if (plans[0].timestamp && typeof plans[0].timestamp === "string") {
             plans[0].timestamp = Math.floor(Date.parse(plans[0].timestamp as string) / 1000);
         }
-        // check and initalize again if not defined or parse fails, undefined again
+        // check and initalize again if not defined or parse fails, rendering undefined again
         plans[0].timestamp ||= 0; 
         
-        // make sure each plan contains at least a height and a timestamp, copying from the previous one if missing
+        // make sure each plan contains at least a height and a timestamp, copying forward if missing
         for (let i = 1; i < this.config.plans.length; i++) {
             plans[i].height ||= plans[i-1].height;
             if (plans[i].timestamp && typeof plans[i].timestamp === "string") {
@@ -88,6 +89,14 @@ export class ConfigHelper {
                 plans[i].payoffset = 0;
             if ( plans[i].payperiod !== undefined && plans[i].guardtime > 60 ) 
                 plans[i].guardtime = 10;
+        }
+
+        // The first plan height must be zero - otherwise getPlan filter may return empty.
+        // Insert a placeholder plan with 0 allocation, with delegate username copied backward
+        if (plans[0].height != 0) {
+            const plan0: IPlan = JSON.parse(JSON.stringify(baseplan));
+            plan0.reserves[0].address = plans[0].reserves[0].address;
+            plans.unshift(plan0);
         }
 
         const configShallowClone = {...this.config};

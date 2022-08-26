@@ -11,9 +11,10 @@ export const defaults = {
     plans: [
         {
             height: 0,
-            share: 50,
+            timestamp: 0,
+            share: 0,
             reserves: [
-                {address: "reserve_wallet_address", share: 50}
+                {address: "reserve_wallet_address", share: 0}
             ],
             donations: [],
             blacklist: [],
@@ -24,4 +25,20 @@ export const defaults = {
             guardtime: 10
         },
     ]
+};
+
+export const baseplan = {
+    height: 0,
+    timestamp: 0,
+    share: 0,
+    reserves: [
+        {address: "", share: 0}
+    ],
+    donations: [],
+    blacklist: [],
+    mincap: 0,
+    maxcap: 0,
+    payperiod: 24,
+    payoffset: 0,
+    guardtime: 10
 };
