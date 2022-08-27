@@ -165,8 +165,8 @@ export class Teller{
                 }
                 const fe = chunk[0]; //first entry
                 const msg = this.configHelper.getConfig().mergeAddrsInTx 
-                    ? "osrn reward sharing"
-                    : `osrn rewards for ${fe.y}-${fe.m}-${fe.d}-${fe.q}/${24/plan.payperiod}`;
+                    ? `${this.configHelper.getConfig().delegate} reward sharing`
+                    : `${this.configHelper.getConfig().delegate} rewards for ${fe.y}-${fe.m}-${fe.d}-${fe.q}/${24/plan.payperiod}`;
 
                 // pass to paybill
                 const txid = await this.payBill(chunk, msg);
