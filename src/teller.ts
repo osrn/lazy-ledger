@@ -77,7 +77,7 @@ export class Teller{
             // Day of Week: 0-6 (Sun-Sat)
             //this.cronStmt = "0 0/2 * * * *"; // Temp cron every 2 minutes for testing independent of the configured plan
             this.cronStmt = plan.payperiod <= 24 ? `0 ${plan.guardtime} ${plan.payoffset}/${plan.payperiod} * * *` 
-                                                : `0 ${plan.guardtime} ${plan.payoffset} ${cronStartDay}/${plan.payperiod} * *`;
+                                                 : `0 ${plan.guardtime} ${plan.payoffset} ${cronStartDay}/${plan.payperiod} * *`;
 
             this.cronJob = new CronJob(this.cronStmt, this.getBill, null, true, undefined, this, undefined, 0);
 
@@ -343,6 +343,7 @@ export class Teller{
                 const group = group_by_keys.map(k => curr[k]).join('-');
                 acc[group] = acc[group] || Object.fromEntries(group_by_keys.map(k => [k, curr[k]]).concat(sum_keys.map(k => [k, 0])));
                 sum_keys.forEach(k => acc[group][k] += curr[k]);
+                //TODO: use Utils.BigNumber arithmetic here?
                 return acc;
             }, {})
         );

@@ -35,10 +35,10 @@ export class TxRepository {
                     AND REGEXP_REPLACE((asset::jsonb->'votes')::text, '[+]','')::jsonb ?| array['${username}', '${public_key}']
                     ORDER BY sender_public_key ASC, block_height DESC    
                 ) AS q3 ON q2.sender_public_key = q3.sender_public_key
-              WHERE ((q2.type_group=${Enums.TransactionTypeGroup.Solar} AND q2.type=${Enums.TransactionType.Solar.Vote}) 
-                  OR (q2.type_group=${Enums.TransactionTypeGroup.Core} AND q2.type=${Enums.TransactionType.Core.Vote}))
+                WHERE ((q2.type_group=${Enums.TransactionTypeGroup.Solar} AND q2.type=${Enums.TransactionType.Solar.Vote}) 
+                    OR (q2.type_group=${Enums.TransactionTypeGroup.Core} AND q2.type=${Enums.TransactionType.Core.Vote}))
                 AND q2.block_height <= ${end}
-              ORDER BY q2.sender_public_key ASC, q2.block_height DESC
+                ORDER BY q2.sender_public_key ASC, q2.block_height DESC
             ) AS q1
             -- filter out those who no longer vote for the delegate
             WHERE REGEXP_REPLACE(q1.voting_for::text, '[+]','')::jsonb ?| array['${username}', '${public_key}']

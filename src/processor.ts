@@ -1,7 +1,7 @@
-import { Interfaces, Utils } from "@solar-network/crypto";
+import { Enums, Interfaces, Utils } from "@solar-network/crypto";
 import { DatabaseService, Repositories } from "@solar-network/database";
 import { Container, Contracts, Enums as AppEnums, Services, Utils as AppUtils } from "@solar-network/kernel";
-import { IAllocation, IForgedBlock, IMissedBlock, PayeeTypes } from "./interfaces";
+import { IAllocation, IConfig, IForgedBlock, IMissedBlock, PayeeTypes } from "./interfaces";
 import { ConfigHelper, configHelperSymbol } from "./config_helper";
 import { Database, databaseSymbol } from "./database";
 import { Teller, tellerSymbol } from "./teller";
@@ -52,6 +52,7 @@ export class Processor {
     private syncing: boolean = false;
     //private config!: IConfig;
     private txWatchPool: Set<string> = new Set();
+    // private lastVoterAllocation!: IAllocation[];
 
     public async boot(): Promise<void> {
         this.sqlite = this.app.get<Database>(databaseSymbol);
@@ -201,22 +202,119 @@ export class Processor {
 
         this.events.listen(AppEnums.TransactionEvent.Applied, {
             handle: async ({ data }) => {
-                // TODO: Do not process if plan at height has payperiod=0, meaning plugin provides database only, payment is handled externally
-                // console.log(`(LL) received transaction applied event with id ${data.id}`)
-                const d: Interfaces.ITransactionData = data as Interfaces.ITransactionData;
-                if (this.txWatchPool.has(d.id!)) {
-                    this.logger.debug(`(LL) Received transaction applied event with id ${data.id} which is in the watchlist`)
+                const txData: Interfaces.ITransactionData = data as Interfaces.ITransactionData;
+                // console.log(`(LL) received transaction applied event with data ${JSON.stringify(txData,null,4)}`)
 
+                if (txData.typeGroup == Enums.TransactionTypeGroup.Core && txData.type == Enums.TransactionType.Core.Transfer) {
                     // wait until block is in block repository
-                    while (d.blockHeight! > (await this.getLastBlockHeight())) {
+                    while (txData.blockHeight! > (await this.getLastBlockHeight())) {
                         await delay(100);
                     }
+                    const txBlock = await this.blockRepository.findByHeight(txData.blockHeight!);
 
-                    // transactions v2 and v3 no longer has a timetamp. Find it from the block it was forged in
-                    // and marked the allocation settled.
-                    const bl = await this.blockRepository.findByHeight(d.blockHeight!);
-                    if (bl && this.sqlite.settleAllocation(d.id!, AppUtils.formatTimestamp(bl.timestamp).unix).changes > 0) {
-                        this.txWatchPool.delete(d.id!);
+                    // If the transaction is in our watch list, mark the allocation payment as settled
+                    if (this.txWatchPool.has(txData.id!)) {
+                        this.logger.debug(`(LL) Received a transaction applied event ${data.id} which is in the watchlist`)
+
+                        // Transactions v2 and v3 no longer has a timetamp. Get it from the block it was forged in
+                        if (txBlock && this.sqlite.settleAllocation(txData.id!, AppUtils.formatTimestamp(txBlock.timestamp).unix).changes > 0) {
+                            this.logger.debug(`(LL) Marked allocations with txid ${data.id} as settled`)
+                            this.txWatchPool.delete(txData.id!);
+                        }
+                    }
+                    // Anti-bot: check for voter originated outbound transfers within 1 round following a forged block - only during real-time processing
+                    // and reduce valid vote to the new wallet amount if voter wallet made an outbound transfer within the round
+                    // TODO: currently checking for transfer transaction only. voter can still game the system with an HTLC-lock then immediate claim to new wallet.
+                    else if (!this.isInitialSync()) {
+                        const config: IConfig = this.configHelper.getConfig();
+                        const whitelist = [...config.whitelist, config.delegateAddress];
+                        const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
+                        const lastVoterAllocation: IAllocation[] = this.sqlite.getLastVoterAllocation();
+
+                        if (lastForgedBlock && lastVoterAllocation.length > 0) { // always true unless brand new delegate
+                            const txRound = AppUtils.roundCalculator.calculateRound(txData.blockHeight!);
+                            
+                            if (txRound.round - lastForgedBlock.round <= 1) { // look ahead 1 round
+                                const vrecord = lastVoterAllocation.filter( v => !whitelist.includes(v.address)) // exclude white-list
+                                                                   .find( v => v.address === txData.senderId); 
+
+                                // sender is a voter. recalculate the voter's valid vote and update last forged block allocations
+                                // ("lastVoterAllocation before");console.log(lastVoterAllocation);
+                                if (vrecord) {
+                                    const txAmount = txData.asset?.transfers?.map(v => v.amount).reduce( (prev,curr) => prev.plus(curr), Utils.BigNumber.ZERO) || Utils.BigNumber.ZERO;
+                                    this.logger.debug(`(LL) Anti-bot detected voter ${vrecord.address} balance reduction of ${txAmount.div(1e6).toFixed()} SXP within round [${lastForgedBlock.round}-${txRound.round}].`)
+                                    this.logger.debug(`(LL) Redistributing block allocations for height ${lastForgedBlock.height}.`)
+
+                                    vrecord.balance = vrecord.balance.minus(txAmount).minus(txData.fee); // reduce balance at forged block by the txamount
+                                    if (vrecord.balance.isNegative()) // We check outbound transfers only. Voter may have received funds before sending out.
+                                        vrecord.balance = Utils.BigNumber.ZERO;
+                                    const vote = vrecord.balance.times(Math.round(vrecord.votePercent * 100)).div(10000);
+                                    const plan = this.configHelper.getPlan(lastForgedBlock.height, lastForgedBlock.timestamp);
+                                    vrecord.validVote = vote.isLessThan(plan.mincap) || plan.blacklist.includes(vrecord.address) ? 
+                                        Utils.BigNumber.ZERO : (plan.maxcap && vote.isGreaterThan(plan.maxcap) ? Utils.BigNumber.make(plan.maxcap) : vote);
+                
+                                    // recalculate allotments for all voters with the new vote distribution
+                                    const validVotes = lastVoterAllocation.map( o => o.validVote).reduce((prev, curr) => prev.plus(curr), Utils.BigNumber.ZERO);
+                                    const earned_tx_fees = lastForgedBlock.fees.minus(lastForgedBlock.burnedFees);
+                                    const netReward = lastForgedBlock.reward.minus(lastForgedBlock.devfund).plus(this.configHelper.getConfig().shareEarnedFees ? earned_tx_fees : Utils.BigNumber.ZERO);
+                                    lastVoterAllocation.forEach(v => v.allotment = validVotes.isZero() ? 
+                                        Utils.BigNumber.ZERO : netReward.times(Math.round(v.shareRatio * 100)).div(10000).times(v.validVote).div(validVotes)
+                                    );
+                                    // console.log("lastVoterAllocation after");console.log(lastVoterAllocation);
+                                    this.sqlite.updateValidVote(lastVoterAllocation);
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+        });
+
+        this.events.listen(AppEnums.VoteEvent.Vote, {
+            handle: async ({ data }) => {
+                console.log(`(LL) received vote event with id ${JSON.stringify(data, null, 4)}`);
+                const config: IConfig = this.configHelper.getConfig();
+
+                // Anti-bot: check for vote changes within 1 round following a forged block - only during real-time processing
+                // and reduce the valid vote to the new voting amount
+                if (data.previousVotes && Object.keys(data.previousVotes).includes(config.delegate)) {
+                    const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
+                    const lastVoterAllocation: IAllocation[] = this.sqlite.getLastVoterAllocation();
+                    
+                    if (lastForgedBlock && lastVoterAllocation.length > 0) { // always true unless brand new delegate
+                        const txRound = AppUtils.roundCalculator.calculateRound(data.transaction.blockHeight);
+                        
+                        if (txRound.round - lastForgedBlock.round <= 1) { // look ahead 1 round
+                            const whitelist = [...config.whitelist, config.delegateAddress];
+                            const vrecord = lastVoterAllocation.filter( v => !whitelist.includes(v.address)) // exclude white-list
+                                                               .find( v => v.address === data.transaction.senderId); 
+
+                            // sender is a voter. If vote is reduced (or unvoted), recalculate the voter's valid vote and update last forged block allocations
+                            // console.log("lastVoterAllocation before");console.log(lastVoterAllocation);
+                            if (vrecord) {                                
+                                const votePercent = data.wallet.votingFor[config.delegate]?.percent || 0;
+                                if (votePercent < vrecord.votePercent) {
+                                    this.logger.debug(`(LL) Anti-bot detected voter ${vrecord.address} vote percent reduction (${vrecord.votePercent} => ${votePercent}) within round [${lastForgedBlock.round}-${txRound.round}].`)
+                                    this.logger.debug(`(LL) Redistributing block allocations for height ${lastForgedBlock.height}.`)
+
+                                    vrecord.votePercent = votePercent; // reduce vote percent at forged block to the new value
+                                    const vote = vrecord.balance.times(Math.round(vrecord.votePercent * 100)).div(10000);
+                                    const plan = this.configHelper.getPlan(lastForgedBlock.height, lastForgedBlock.timestamp);
+                                    vrecord.validVote = vote.isLessThan(plan.mincap) || plan.blacklist.includes(vrecord.address) ? 
+                                        Utils.BigNumber.ZERO : (plan.maxcap && vote.isGreaterThan(plan.maxcap) ? Utils.BigNumber.make(plan.maxcap) : vote);
+                                    
+                                    // recalculate allotments for all voters with the new vote distribution
+                                    const validVotes = lastVoterAllocation.map( o => o.validVote).reduce((prev, curr) => prev.plus(curr), Utils.BigNumber.ZERO);
+                                    const earned_tx_fees = lastForgedBlock.fees.minus(lastForgedBlock.burnedFees);
+                                    const netReward = lastForgedBlock.reward.minus(lastForgedBlock.devfund).plus(this.configHelper.getConfig().shareEarnedFees ? earned_tx_fees : Utils.BigNumber.ZERO);
+                                    lastVoterAllocation.forEach(v => v.allotment = validVotes.isZero() ? 
+                                        Utils.BigNumber.ZERO : netReward.times(Math.round(v.shareRatio * 100)).div(10000).times(v.validVote).div(validVotes)
+                                    );
+                                    // console.log("lastVoterAllocation after");console.log(lastVoterAllocation);                                    
+                                    this.sqlite.updateValidVote(lastVoterAllocation);
+                                }
+                            }
+                        }
                     }
                 }
             },
@@ -273,8 +371,8 @@ export class Processor {
                 voters.push({
                     height: block.height,
                     address: walletAddress,
-                    percent: v.percent,
                     balance: walletBalance,
+                    percent: v.percent,
                     vote: vote,
                     validVote: validVote
                 });
@@ -295,6 +393,7 @@ export class Processor {
                 burnedFees: block.burnedFee === undefined ? Utils.BigNumber.ZERO : block.burnedFee, 
                 votes: votes,
                 validVotes: validVotes,
+                orgValidVotes: validVotes,
                 voterCount: voters.length,
             });
             //console.log(`(LL) forged blocks after\n${JSON.stringify(forgedBlocks)}`);
@@ -312,8 +411,11 @@ export class Processor {
                 allocations.push({
                     height: block.height,
                     address: r.address,
-                    payeeType: PayeeTypes.reserve,  
-                    vote: Utils.BigNumber.ZERO,
+                    payeeType: PayeeTypes.reserve,
+                    balance: Utils.BigNumber.ZERO,
+                    orgBalance: Utils.BigNumber.ZERO,
+                    votePercent: 0,
+                    orgVotePercent: 0,
                     validVote: Utils.BigNumber.ZERO,
                     shareRatio: r.share,
                     allotment: allotted,
@@ -327,8 +429,11 @@ export class Processor {
                 allocations.push({
                     height: block.height,
                     address: d.address,
-                    payeeType: PayeeTypes.donee,  
-                    vote: Utils.BigNumber.ZERO,
+                    payeeType: PayeeTypes.donee,
+                    balance: Utils.BigNumber.ZERO,
+                    orgBalance: Utils.BigNumber.ZERO,
+                    votePercent: 0,
+                    orgVotePercent: 0,
                     validVote: Utils.BigNumber.ZERO,
                     shareRatio: d.share,
                     allotment: netReward.times(Math.round(d.share * 100)).div(10000),
@@ -344,19 +449,22 @@ export class Processor {
                     height: block.height,
                     address: v.address,
                     payeeType: PayeeTypes.voter,  
-                    vote: v.vote,
+                    balance: v.balance,
+                    orgBalance: v.balance,
+                    votePercent: v.percent,
+                    orgVotePercent: v.percent,
                     validVote: v.validVote,
                     shareRatio: plan.share,
-                    allotment: validVotes.isZero() ? Utils.BigNumber.ZERO : netReward.times(Math.round(plan.share * 100)).div(10000).times(v.vote).div(validVotes),
+                    allotment: validVotes.isZero() ? Utils.BigNumber.ZERO : netReward.times(Math.round(plan.share * 100)).div(10000).times(v.validVote).div(validVotes),
                     booked: timeNow,
                     transactionId: "",
                     settled: 0
                 });
-
             }
             //console.log(`(LL) allocations after voters\n${JSON.stringify(allocations)}`);
         }
         this.sqlite.insert(forgedBlocks, missedBlocks, allocations);
+        //this.lastVoterAllocation = [...allocations].filter( a => a.payeeType === PayeeTypes.voter);
         this.logger.debug(`(LL) Completed processing batch of ${blocks.length} blocks`);
     }
 

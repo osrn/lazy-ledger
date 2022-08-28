@@ -24,6 +24,9 @@ The plugin can optionally be used for bookkeeping only; handling payments extern
 
 [^4]: `.local/share/solar-core/{mainnet|testnet}/lazy-ledger.sqlite`
 
+### Voter protection
+Plugin employs a built in protection mechanism against malicious bots - which make a roundtrip of votes &| funds among several addresses within the round - by reducing the voting amount of the relavant addresses immediately and recalculating the allocation distribution for all voters for the last forged block.
+
 ## Installation
 ```bash
 cd ~/solar-core/plugins
@@ -120,6 +123,7 @@ Payment plans work with milestone logic: higher index properties override the lo
 | shareEarnedFees | boolean | false | include earned transaction fees (=unburned 10%) in reserve, voter and donee allocations |
 | reserveGetsFees | boolean | false | when earned fees are not shared, allocate transaction fees to the first reserve address \| stays in delegate wallet otherwise) |
 | postInitInstantPay | boolean | false | make a payment run immediately after plugin starts following initial sync |
+| whitelist | string[] | [] | addresses exempted from malicious behavior (delegate address is automatically whitelisted) |
 
 ### Plan
 
