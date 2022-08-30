@@ -1,6 +1,6 @@
-import { Enums, Interfaces, Utils } from "@solar-network/crypto";
+import { Constants, Enums, Interfaces, Utils } from "@solar-network/crypto";
 import { DatabaseService, Repositories } from "@solar-network/database";
-import { Container, Contracts, Enums as AppEnums, Services, Utils as AppUtils } from "@solar-network/kernel";
+import { Container, Contracts, Enums as AppEnums, Utils as AppUtils } from "@solar-network/kernel";
 import { IAllocation, IConfig, IForgedBlock, IMissedBlock, PayeeTypes } from "./interfaces";
 import { ConfigHelper, configHelperSymbol } from "./config_helper";
 import { Database, databaseSymbol } from "./database";
@@ -17,10 +17,6 @@ export class Processor {
 
     @Container.inject(Container.Identifiers.DatabaseBlockRepository)
     private readonly blockRepository!: Repositories.BlockRepository;
-
-    // @Container.inject(Container.Identifiers.PluginConfiguration)
-    // @Container.tagged("plugin", "@osrn/lazy-ledger")
-    // //private readonly configuration!: Providers.PluginConfiguration;
 
     @Container.inject(configHelperSymbol)
     private readonly configHelper!: ConfigHelper;
@@ -44,7 +40,6 @@ export class Processor {
     @Container.inject(txRepositorySymbol)
     private readonly transactionRepository!: TxRepository;
 
-    private active: boolean = true;
     private initial: boolean = false;
     private lastFetchedBlockHeight: number = 0;
     private sqlite!: Database;
@@ -59,10 +54,6 @@ export class Processor {
         this.teller = this.app.get<Teller>(tellerSymbol);
         this.init();
         this.logger.info("(LL) Processor boot complete");
-    }
-
-    private isActive(): boolean {
-        return this.active;
     }
 
     public isSyncing(): boolean {
@@ -95,14 +86,19 @@ export class Processor {
     }
 
     private async getLastForgedBlock(): Promise<Interfaces.IBlockData | undefined> {
-        // TODO: Is this the best method for the task?
-        const lastForgedBlockId: string = this.configHelper.getConfig().delegateWallet!.getAttribute("delegate.lastBlock");
-        return (await this.blockRepository.findById(lastForgedBlockId));
+        return this.transactionRepository.getLastForgedBlock(this.configHelper.getConfig().delegate);
+
+        // Initially used method below retired as lastBlock attribute sporadically disappears from the delegate record
+        // if (this.configHelper.getConfig().delegateWallet!.hasAttribute("delegate.lastBlock")) {
+        //     const lastForgedBlockId: string = this.configHelper.getConfig().delegateWallet!.getAttribute("delegate.lastBlock");
+        //     return (await this.blockRepository.findById(lastForgedBlockId));
+        // }
+        // return undefined;
     }
 
     private async getLastForgedBlockHeight(): Promise<number> {
-        // TODO: Is this the best method for the task?
-        return (await this.getLastForgedBlock())!.height;
+        const lastForgedBlock = await this.getLastForgedBlock();
+        return lastForgedBlock ? lastForgedBlock.height : 0;
     }
 
     public txWatchPoolAdd(txids: string[]): void {
@@ -111,8 +107,8 @@ export class Processor {
 
     private async init(): Promise<void> {
         const lastForgedBlock: Interfaces.IBlockData | undefined = await this.getLastForgedBlock();
-        const lastForgedBlockHeight: number = lastForgedBlock!.height;
-        const lastForgedBlockTimestamp: number = lastForgedBlock!.timestamp;
+        const lastForgedBlockHeight: number = lastForgedBlock ? lastForgedBlock!.height : 0;
+        const lastForgedBlockTimestamp: number = lastForgedBlock ? lastForgedBlock!.timestamp : 0;
 
         this.lastFetchedBlockHeight = this.sqlite.getHeight();
 
@@ -144,9 +140,9 @@ export class Processor {
                 }
             }
             else {
-                this.logger.critical(`(LL) Detected an unsettled allocation in database marked with a non-existing tx with id ${txid}`);
+                this.logger.critical(`(LL) Detected an unsettled allocation marked with an invalid tx ${txid}`);
                 //TODO: erase the TXid? or leave it to the delegate to inspect and manually delete
-                //TOOD: should this check be run as a periodic job, rather than running at relay restart only? (hence erase TXid can be paid in next payment run)
+                //TODO: should this check be run as a periodic job, rather than running at relay restart only? (hence erased TXid can be paid in next payment run)
             }
         }
                 
@@ -154,7 +150,7 @@ export class Processor {
             handle: async ({ data }) => {
                 // console.log(`(LL) received new block applied event at ${data.height} forged by ${data.generatorPublicKey}`)
 
-                // wait until block is in block repository
+                // wait until block is in repository
                 while (data.height > (await this.getLastBlockHeight())) {
                     await delay(100);
                 }
@@ -168,9 +164,6 @@ export class Processor {
                 if (this.configHelper.hasPresentPlanChanged()) {
                     this.teller.restartCron();
                 }
-                // else {
-                //     console.log(`(LL) block at ${data.height} with ${data.generatorPublicKey} is not of interest`);
-                // }
             },
         });
 
@@ -183,9 +176,6 @@ export class Processor {
                     this.sqlite.purgeFrom(data.height, data.timestamp);
                     this.lastFetchedBlockHeight = this.sqlite.getHeight();
                 }
-                // else {
-                //     console.log(`(LL) block at ${data.height} with ${data.generatorPublicKey} is not of interest`);
-                // }
 
                 // Restart Teller cron if a new plan is in effect by this height/time
                 if (this.configHelper.hasPresentPlanChanged()) {
@@ -196,7 +186,7 @@ export class Processor {
 
         this.events.listen(AppEnums.RoundEvent.Missed, {
             handle: async ({ data }) => {
-                //TODO: handle this in later versions with telegram|discord integration
+                //TODO: to be handled with telegram|discord integration
             },
         });
 
@@ -212,7 +202,7 @@ export class Processor {
                     }
                     const txBlock = await this.blockRepository.findByHeight(txData.blockHeight!);
 
-                    // If the transaction is in our watch list, mark the allocation payment as settled
+                    // If the transaction is in the watch list, mark the allocation payment as settled
                     if (this.txWatchPool.has(txData.id!)) {
                         this.logger.debug(`(LL) Received a transaction applied event ${data.id} which is in the watchlist`)
 
@@ -226,6 +216,9 @@ export class Processor {
                     // and reduce valid vote to the new wallet amount if voter wallet made an outbound transfer within the round
                     // TODO: currently checking for transfer transaction only. voter can still game the system with an HTLC-lock then immediate claim to new wallet.
                     else if (!this.isInitialSync()) {
+                        while (this.isSyncing()) {
+                            await delay(100);
+                        }
                         const config: IConfig = this.configHelper.getConfig();
                         const whitelist = [...config.whitelist, config.delegateAddress];
                         const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
@@ -242,7 +235,7 @@ export class Processor {
                                 // ("lastVoterAllocation before");console.log(lastVoterAllocation);
                                 if (vrecord) {
                                     const txAmount = txData.asset?.transfers?.map(v => v.amount).reduce( (prev,curr) => prev.plus(curr), Utils.BigNumber.ZERO) || Utils.BigNumber.ZERO;
-                                    this.logger.debug(`(LL) Anti-bot detected voter ${vrecord.address} balance reduction of ${txAmount.div(1e6).toFixed()} SXP within round [${lastForgedBlock.round}-${txRound.round}].`)
+                                    this.logger.debug(`(LL) Anti-bot detected voter ${vrecord.address} balance reduction of ${txAmount.div(Constants.SATOSHI).toFixed()} SXP within round [${lastForgedBlock.round}-${txRound.round}].`)
                                     this.logger.debug(`(LL) Redistributing block allocations for height ${lastForgedBlock.height}.`)
 
                                     vrecord.balance = vrecord.balance.minus(txAmount).minus(txData.fee); // reduce balance at forged block by the txamount
@@ -272,12 +265,15 @@ export class Processor {
 
         this.events.listen(AppEnums.VoteEvent.Vote, {
             handle: async ({ data }) => {
-                console.log(`(LL) received vote event with id ${JSON.stringify(data, null, 4)}`);
+                // console.log(`(LL) received vote event with id ${JSON.stringify(data, null, 4)}`);
                 const config: IConfig = this.configHelper.getConfig();
 
                 // Anti-bot: check for vote changes within 1 round following a forged block - only during real-time processing
                 // and reduce the valid vote to the new voting amount
-                if (data.previousVotes && Object.keys(data.previousVotes).includes(config.delegate)) {
+                if (!this.isInitialSync() && data.previousVotes && Object.keys(data.previousVotes).includes(config.delegate)) {
+                    while (this.isSyncing()) {
+                        await delay(100);
+                    }
                     const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
                     const lastVoterAllocation: IAllocation[] = this.sqlite.getLastVoterAllocation();
                     
@@ -326,7 +322,7 @@ export class Processor {
                 this.logger.debug(`(LL) Received transaction reverted event with id ${data.id}`);
 
                 // Hopefully not many TX reverted events will occur, since the query needs to be executed for each and every one
-                // Alternative: keep another watchlist; but it is more expensive
+                // Alternative: keep another watchlist; but it could be more expensive then SQL
                 (this.sqlite.clearTransactionId(data.id).changes > 0);
             },
         });
@@ -337,14 +333,6 @@ export class Processor {
         const missedBlocks: IMissedBlock[] = [];
         const allocations: IAllocation[] = [];
 
-        // Check if Genesis Round wallet[0] has delegate.username attribute
-        // TODO: Why?? Is this really needed?? If so, move this back into calling code block; no need to repeat at each pagination!
-        const genesisRound: Contracts.State.Wallet[] = (await this.app
-            .get<Services.Triggers.Triggers>(Container.Identifiers.TriggerService)
-            .call("getActiveDelegates", {roundInfo: AppUtils.roundCalculator.calculateRound(1),})) as Contracts.State.Wallet[];
-        if (!genesisRound[0].hasAttribute("delegate.username")) {
-            return;
-        }
         const blockarray: Interfaces.IBlockData[] = blocks as Interfaces.IBlockData[];
         const blockheights = blockarray.map((block) => block.height);
         this.logger.debug(`(LL) Received batch of ${blocks.length} blocks to process | heights: ${blockheights.toString()}`);
@@ -352,7 +340,7 @@ export class Processor {
         for (let blockCounter = 0; blockCounter < blocks.length; blockCounter++) {
             const block: Interfaces.IBlockData = blocks[blockCounter];
             const round = AppUtils.roundCalculator.calculateRound(block.height);
-            const generatorWallet: Contracts.State.Wallet = this.walletRepository.findByPublicKey(block.generatorPublicKey); // reading from the forged block instead of config.delegateWallet for the plugin may process multiple delegates' payments in the future
+            const generatorWallet: Contracts.State.Wallet = this.walletRepository.findByPublicKey(block.generatorPublicKey); // reading from the forged block instead of config.delegateWallet
             const generator: string = block.height == 1 ? generatorWallet.getAddress() : generatorWallet.getAttribute("delegate.username");
             const devfund: Utils.BigNumber = Object.values(block.devFund!).reduce((a, b) => a.plus(b), Utils.BigNumber.ZERO);
             const voters: { height:number; address: string; balance: Utils.BigNumber; percent: number; vote: Utils.BigNumber; validVote: Utils.BigNumber}[] = [];
@@ -361,9 +349,19 @@ export class Processor {
 
             const plan = this.configHelper.getPlan(block.height, block.timestamp);
             const voter_roll = await this.transactionRepository.getDelegateVotesByHeight(block.height, generator, block.generatorPublicKey);
+            const lastVoterAllocation: IAllocation[] = this.sqlite.getLastVoterAllocation();
             for (const v of voter_roll) {
                 const walletAddress: string = this.walletRepository.findByPublicKey(v.publicKey).getAddress();
-                const walletBalance = await this.transactionRepository.getNetBalanceByHeightRange(0, block.height, walletAddress, v.publicKey);
+                let startFrom: number = 0;
+                let prevBalance: Utils.BigNumber = Utils.BigNumber.ZERO;
+                if (lastVoterAllocation.length > 0 && lastVoterAllocation[0].height < block.height) {
+                    const vrecord: IAllocation | undefined = lastVoterAllocation.find( v => v.address ===walletAddress);
+                    if (vrecord) {
+                        startFrom = vrecord.height;
+                        prevBalance = vrecord.orgBalance;
+                    }
+                }
+                const walletBalance = prevBalance.plus(await this.transactionRepository.getNetBalanceByHeightRange(startFrom, block.height, walletAddress, v.publicKey));
                 const vote = walletBalance.times(Math.round(v.percent * 100)).div(10000);
                 const validVote = vote.isLessThan(plan.mincap) || plan.blacklist.includes(walletAddress) ? 
                     Utils.BigNumber.ZERO : (plan.maxcap && vote.isGreaterThan(plan.maxcap) ? Utils.BigNumber.make(plan.maxcap) : vote);
@@ -396,9 +394,7 @@ export class Processor {
                 orgValidVotes: validVotes,
                 voterCount: voters.length,
             });
-            //console.log(`(LL) forged blocks after\n${JSON.stringify(forgedBlocks)}`);
 
-            // const netReward = block.reward.plus(block.totalFee).minus(block.burnedFee!).minus(devfund);
             const earned_tx_fees = block.totalFee.minus(block.burnedFee!);
             const netReward = block.reward.minus(devfund).plus(this.configHelper.getConfig().shareEarnedFees ? earned_tx_fees : Utils.BigNumber.ZERO);
             //console.log(`(LL) allocations before\n${JSON.stringify(allocations)}`);
@@ -477,11 +473,11 @@ export class Processor {
     }
 
     private async sync(): Promise<void> {
-        if (this.isSyncing() || !this.isActive()) {
-            this.logger.debug(`(LL) Already syncing?${this.isSyncing()} active?${this.isActive()}. sync request disregarded.`)
+        if (this.isSyncing()) {
+            this.logger.debug(`(LL) Active sync &| block processing in effect. Skipping.`)
             return;
         }
-        this.logger.debug("(LL) Starting sync")
+        this.logger.debug("(LL) Starting sync...")
         this.setSyncing(true);
         let loop: boolean = true;
         while (loop) {
@@ -505,6 +501,7 @@ export class Processor {
                 }
                 else {
                     loop = false;
+                    this.logger.debug(`(LL) Sync complete | lastChainedBlockHeight:${lastChainedBlockHeight} lastForgedBlockHeight:${lastForgedBlockHeight} lastStoredBlockHeight:${lastStoredBlockHeight}\n`)
                 }
             }
             else {

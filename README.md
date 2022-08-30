@@ -44,7 +44,9 @@ This sample config will;
 - allocate 90% to voters, 10% to reserve address between 2022-08-15T00:00:00.000Z and 2022-08-22T00:00:00.000Z, paying every 6 hours at 10 minutes past UTC.
 - allocate 50% to voters, 50% to reserve address after 2022-08-22T00:00:00.000, paying every 24 hours at 00:10 UTC
 
-Payment plans work with milestone logic: higher index properties override the lower ones, where an effective plan is produced against the height and timestamp for a given forged block. 
+Payment plans work with milestone logic: higher index properties override the lower ones, where an effective plan is produced against the height and timestamp for a given forged block.
+
+> Always consider when your plan will be making payments should you ever need to execute `solar snapshot:truncate|rollback` for your relay independent of the network; as this will revert the plugin database to rollback height after relay restart, along with the settlement markers; which may lead to double payments for previously forged blocks. Making a DB backup ahead is the recommended practice before any such destructive operation.
 
 ### Sample configuration
 ```json
@@ -171,7 +173,7 @@ If you have a suggestion for improvement open an issue with the tag "enhancement
 
 ## Acknowledgments
 
-* [Alessiodf](https://github.com/alessiodf/) Solar Core Developer, aka Gym, for the help and guidance navigating the Core maze
+* [Alessiodf](https://github.com/alessiodf/) Solar Core Developer, aka Gym, for his help and guidance navigating the Core maze
 * [Galperins4](https://github.com/galperins4/) Solar Delegate, aka Goose, for all the concepts in his TBW scripts
 
 ## License

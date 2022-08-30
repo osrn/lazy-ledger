@@ -1,5 +1,5 @@
 import { Repositories } from "@solar-network/database";
-import { Enums, Utils } from "@solar-network/crypto";
+import { Enums, Interfaces, Utils } from "@solar-network/crypto";
 import { Container } from "@solar-network/kernel";
 
 export const txRepositorySymbol = Symbol.for("LazyLedger<TxRepository>");
@@ -8,6 +8,15 @@ export const txRepositorySymbol = Symbol.for("LazyLedger<TxRepository>");
 export class TxRepository {
     @Container.inject(Container.Identifiers.DatabaseTransactionRepository)
     public readonly transactionRepository!: Repositories.TransactionRepository;
+
+    // temporarily hijack txrepo
+    public async getLastForgedBlock(username: string): Promise< Interfaces.IBlockData | undefined > {
+        const query = `SELECT * FROM blocks WHERE height = (SELECT MAX(height) FROM blocks WHERE username = '${username}')`;
+        const qresult = await this.transactionRepository.query(query);
+        // console.log("getLastForgedBlock() result:");
+        // console.log(qresult);
+        return qresult ? qresult[0] : undefined;
+    }
 
     /**
      * Retrieves a delegate's voters along with their voting weights at a given block height
