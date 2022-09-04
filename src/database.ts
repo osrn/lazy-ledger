@@ -44,15 +44,15 @@ export class Database {
             CREATE VIEW allocated_human AS
                 SELECT height, address, payeeType, balance/100000000.0 AS balance, votePercent, 
                     balance * votePercent / 100 / 100000000.0 as vote, validVote/100000000.0 AS validVote, 
-                    shareRatio, allotment/100000000.0 AS allotment, strftime('%Y%m%d-%H%M%S', booked, 'unixepoch') AS bookedTime,
+                    shareRatio, allotment/100000000.0 AS allotment, strftime('%Y%m%d-%H%M%S', booked, 'unixepoch') AS bookedTime, 
                     transactionId, CASE WHEN settled = 0 THEN 0 ELSE strftime('%Y%m%d-%H%M%S', settled , 'unixepoch') END AS settledTime, 
                     orgBalance/100000000.0 AS orgBalance, orgVotePercent
-                FROM allocations ORDER BY height DESC;            
+                FROM allocations ORDER BY height DESC;
             DROP VIEW IF EXISTS the_ledger;
             CREATE VIEW the_ledger AS
                 SELECT b.round, a.height, b.forgedTime, b.reward, b.earnedRewards, b.earnedFees, b.netReward, 
                     b.validVotes, a.address, a.payeeType, a.balance, a.votePercent, a.vote, a.validVote, 
-                    a.shareRatio, a.allotment, a.bookedTime, a.transactionId, a.settledTime, a.orgBalance, a.orgVotePercent  
+                    a.shareRatio, a.allotment, a.bookedTime, a.transactionId, a.settledTime, a.orgBalance, a.orgVotePercent 
                 FROM allocated_human a LEFT JOIN forged_blocks_human b ON a.height = b.height;
             CREATE INDEX IF NOT EXISTS forged_blocks_delegate_timestamp ON forged_blocks (delegate, timestamp);
             CREATE INDEX IF NOT EXISTS forged_blocks_delegate_round on forged_blocks (delegate, round);
@@ -86,7 +86,7 @@ export class Database {
         
         (result as unknown as IAllocation[]).forEach(r => { 
             r.balance = Utils.BigNumber.make(r.balance);
-            r.orgBalance = Utils.BigNumber.make(r.balance);
+            r.orgBalance = Utils.BigNumber.make(r.orgBalance);
             r.allotment = Utils.BigNumber.make(r.allotment);
             r.validVote = Utils.BigNumber.make(r.validVote);
         });

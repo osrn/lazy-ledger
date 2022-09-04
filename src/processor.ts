@@ -249,6 +249,7 @@ export class Processor {
                                 if (vrecord) {
                                     const txAmount = txData.asset?.transfers?.map(v => v.amount).reduce( (prev,curr) => prev.plus(curr), Utils.BigNumber.ZERO) || Utils.BigNumber.ZERO;
                                     this.logger.debug(`(LL) Anti-bot detected voter ${vrecord.address} balance reduction of ${txAmount.div(Constants.SATOSHI).toFixed()} SXP within round [${lastForgedBlock.round}-${txRound.round}].`)
+                                    // console.log("registry before");console.log(vrecord);
                                     this.logger.debug(`(LL) Redistributing block allocations for height ${lastForgedBlock.height}.`)
 
                                     vrecord.balance = vrecord.balance.minus(txAmount).minus(txData.fee); // reduce balance at forged block by the txamount
@@ -266,7 +267,7 @@ export class Processor {
                                     lastVoterAllocation.forEach(v => v.allotment = validVotes.isZero() ? 
                                         Utils.BigNumber.ZERO : netReward.times(Math.round(v.shareRatio * 100)).div(10000).times(v.validVote).div(validVotes)
                                     );
-                                    // console.log("lastVoterAllocation after");console.log(lastVoterAllocation);
+                                    // console.log("registry after");console.log(vrecord);
                                     this.sqlite.updateValidVote(lastVoterAllocation);
                                 }
                             }
