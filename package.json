@@ -6,18 +6,16 @@
     "contributors": [
         "osrn <osrnnetwork@gmail.com>"
     ],
-    "license": "GPL-3.0-or-later",
+    "license": "MIT",
     "main": "dist/index.js",
     "files": [
-        "dist/*.js"
+        "dist/**/*.js"
     ],
     "scripts": {
-        "prepublishOnly": "pnpm pretest",
-        "pretest": "pnpm lint && pnpm build",
         "compile": "../../node_modules/typescript/bin/tsc",
         "build": "pnpm clean && pnpm compile",
         "build:watch": "pnpm clean && pnpm compile -w",
-        "clean": "del dist",
+        "clean": "rimraf dist",
         "lint": "../../node_modules/eslint/bin/eslint.js 'src/**/*.ts' --fix"
     },
     "dependencies": {
@@ -28,11 +26,15 @@
         "https": "^1.0.0"
     },
     "devDependencies": {
-        "@solar-network/api": "workspace:*",
         "@solar-network/core": "workspace:*",
         "@solar-network/crypto": "workspace:*",
         "@solar-network/database": "workspace:*",
         "@solar-network/kernel": "workspace:*",
         "@solar-network/transactions": "workspace:*"
+    },
+    "keywords": ["solar","tbw","plugin"],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/osrn/lazy-ledger.git"
     }
 }
