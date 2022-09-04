@@ -7,14 +7,23 @@ export const databaseSymbol = Symbol.for("LazyLedger<Database>");
 
 @Container.injectable()
 export class Database {
-    @Container.inject(Container.Identifiers.LogService)
+    @Container.inject(Container.Identifiers.LogService) 
     private readonly logger!: Contracts.Kernel.Logger;
 
-    private readonly database: SQLite3.Database = new SQLite3(
-        `${process.env.CORE_PATH_DATA}/lazy-ledger.sqlite`,
-    );
+    private database!: SQLite3.Database;
 
+    public init(dataPath?: string) {
+        dataPath ||= process.env.CORE_PATH_DATA;
+        const dbfile = "lazy-ledger.sqlite";
+        if (this.logger) 
+            this.logger.debug(`(LL) Opening database connection @ ${dataPath}/${dbfile}`);
+        else
+            console.log(`(LL) Opening database connection @ ${dataPath}/${dbfile}`);
+        this.database = new SQLite3(`${dataPath}/${dbfile}`);
+    }
+    
     public async boot(): Promise<void> {
+        this.init();
         //NOTE: SQLITE fields data type definitions are just documentation
         this.database.exec(`
             PRAGMA journal_mode=WAL;
@@ -70,9 +79,9 @@ export class Database {
         return response || 0;
     }
 
-    public getLastVoterAllocation(): IAllocation[] {
+    public getLastVoterAllocation(height: number = 0): IAllocation[] {
         const result = this.database
-            .prepare(`SELECT * FROM allocations WHERE height=(SELECT MAX(height) FROM allocations) AND payeeType=${PayeeTypes.voter}`)
+            .prepare(`SELECT * FROM allocations WHERE height=${height ? height : "(SELECT MAX(height) FROM allocations)"} AND payeeType=${PayeeTypes.voter}`)
             .all();
         
         (result as unknown as IAllocation[]).forEach(r => { 
@@ -81,6 +90,14 @@ export class Database {
             r.allotment = Utils.BigNumber.make(r.allotment);
             r.validVote = Utils.BigNumber.make(r.validVote);
         });
+        return result;
+    }
+
+    public getTheLedgerAt(height: number = 0): Object[] {
+        const result = this.database
+            .prepare(`SELECT * FROM the_ledger WHERE height=${height ? height : "(SELECT MAX(height) FROM allocations)"}`)
+            .all();
+        
         return result;
     }
 

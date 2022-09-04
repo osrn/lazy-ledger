@@ -23,9 +23,11 @@
         "cron": "1.8.2",
         "dayjs": "1.10.7",
         "delay": "5.0.0",
-        "https": "^1.0.0"
+        "https": "^1.0.0",
+        "joi": "17.6.0"
     },
     "devDependencies": {
+        "@solar-network/cli": "workspace:*",
         "@solar-network/core": "workspace:*",
         "@solar-network/crypto": "workspace:*",
         "@solar-network/database": "workspace:*",

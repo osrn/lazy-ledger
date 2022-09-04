@@ -31,10 +31,19 @@ Plugin employs a protection mechanism against malicious bots - which make a roun
 
 ## Installation
 ```bash
+solar plugin:install https://github.com/osrn/lazy-ledger.git
+```
+
+or
+```bash
+. ~/.solar/.env
 cd ~/solar-core/plugins
 git clone https://github.com/osrn/lazy-ledger
 cd lazy-ledger
 pnpm install && pnpm build
+cd ~/.local/share/solar-core/testnet/plugins/
+mkdir '@osrn' && cd '@osrn'
+ln -s ~/solar-core/plugins/lazy-ledger lazy-ledger
 ```
 
 ## Configuration
@@ -157,6 +166,9 @@ Payment plans follows a milestone principle: higher index properties override th
 
 ## Running
 Configure, then restart relay. First time sync may take ~10+mins for 1.2M blocks depending on the node capacity.
+
+## CLI
+`solar ll:alloc (height)` : shows the block allocation at last block or at block height.
 
 ## Logs
 Uses the core logger with (LL) prefix. Type `pm2 logs solar-relay` or `less -R +F ~/.pm2/logs/solar-relay-out.log` to watch the logs in real time. `grep "(LL)" ~/.pm2/logs/solar-relay-out.log` or `less -R ~/.pm2/logs/solar-relay-out.log` then less command `&(LL)` to filter for Lazy-Ledger output.
