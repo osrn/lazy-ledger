@@ -41,7 +41,7 @@ export class Processor {
     private readonly transactionRepository!: TxRepository;
 
     private initial: boolean = false;
-    private lastFetchedBlockHeight: number = 0;
+    private lastStoredBlockHeight: number = 0;
     private sqlite!: Database;
     private teller!: Teller;
     private syncing: boolean = false;
@@ -108,26 +108,39 @@ export class Processor {
     private async init(): Promise<void> {
         const lastForgedBlock: Interfaces.IBlockData | undefined = await this.getLastForgedBlock();
         const lastForgedBlockHeight: number = lastForgedBlock ? lastForgedBlock!.height : 0;
-        const lastForgedBlockTimestamp: number = lastForgedBlock ? lastForgedBlock!.timestamp : 0;
 
-        this.lastFetchedBlockHeight = this.sqlite.getHeight();
+        this.lastStoredBlockHeight = this.sqlite.getHeight();
 
-        // roll back if block reverted or a network roll-back occurred
-        if (this.lastFetchedBlockHeight > lastForgedBlockHeight) {
-            this.sqlite.purgeFrom(lastForgedBlockHeight + 1, lastForgedBlockTimestamp + 1);
-            this.lastFetchedBlockHeight = this.sqlite.getHeight();
-        }
+        // roll back if local db is ahead of the network, purging from the start of the round
+        // (solar snapshot:rollback always starts from the start of the round, during which we may have 
+        // a different forging slot - hence height - from the one we had forged in that round. 
+        // (Cleaning from the lastForgedBlockHeight would have left rogue block heights in the local db, 
+        // if new forging slot were to be later than the old one)
+        if (this.lastStoredBlockHeight > lastForgedBlockHeight) {
+            const lastForgedRound = AppUtils.roundCalculator.calculateRound(lastForgedBlockHeight);
+            const block = await this.blockRepository.findByHeight(lastForgedRound.roundHeight);
 
-        // database is behind the network. catch-up.
-        if (lastForgedBlockHeight !== this.sqlite.getHeight()) {
-            this.setInitialSync(true);
-            this.sync();
+            if (!block) {
+                this.logger.error(`(LL) Unexpected error. Need to roll back to height ${lastForgedRound.roundHeight} but no such height exists in block repository. 
+                lastForgedBlock: ${lastForgedBlock} lastStoredBlockHeight: ${this.lastStoredBlockHeight} lastForgedRound: ${lastForgedRound}`);
+            }
+            else {
+                this.sqlite.purgeFrom(block.height, block.timestamp);
+                this.lastStoredBlockHeight = this.sqlite.getHeight();    
+            }
         }
         else {
-            if (this.configHelper.getConfig().postInitInstantPay) {
-                this.configHelper.getConfig().postInitInstantPay = false;
-                this.teller.instantPay();
-            }    
+            // catch-up if local database is behind the network
+            if (lastForgedBlockHeight !== this.lastStoredBlockHeight) {
+                this.setInitialSync(true);
+                this.sync();
+            }
+            else {
+                if (this.configHelper.getConfig().postInitInstantPay) {
+                    this.configHelper.getConfig().postInitInstantPay = false;
+                    this.teller.instantPay();
+                }    
+            }
         }
 
         // find unsettled allocations and stamp if forged
@@ -172,9 +185,9 @@ export class Processor {
                 // console.log(`(LL) received block reverted event at ${data.height} forged by ${data.generatorPublicKey}`)
 
                 if (this.configHelper.getConfig().delegatePublicKey === data.generatorPublicKey) {
-                    this.logger.debug(`(LL) Received block reverted event at ${data.height} previously forged by us`)
+                    this.logger.debug(`(LL) Received block revert event for height ${data.height} previously forged by us`)
                     this.sqlite.purgeFrom(data.height, data.timestamp);
-                    this.lastFetchedBlockHeight = this.sqlite.getHeight();
+                    this.lastStoredBlockHeight = this.sqlite.getHeight();
                 }
 
                 // Restart Teller cron if a new plan is in effect by this height/time
@@ -486,14 +499,14 @@ export class Processor {
             const lastChainedBlockHeight: number = await this.getLastBlockHeight();
             const lastForgedBlockHeight: number = await this.getLastForgedBlockHeight();
 
-            if (lastStoredBlockHeight < lastForgedBlockHeight && this.lastFetchedBlockHeight < lastChainedBlockHeight) {
+            if (lastStoredBlockHeight < lastForgedBlockHeight && this.lastStoredBlockHeight < lastChainedBlockHeight) {
                 const blocks: Contracts.Shared.DownloadBlock[] = await this.database.getBlocksForDownload(
-                    this.lastFetchedBlockHeight + 1,
+                    this.lastStoredBlockHeight + 1,
                     10000,
                     true);
 
-                if (blocks.length) { //actually redundant when lastFetchedBlockHeight < lastChainedBlockHeight
-                    this.lastFetchedBlockHeight = blocks[blocks.length -1].height;
+                if (blocks.length) { //actually redundant when lastStoredBlockHeight < lastChainedBlockHeight
+                    this.lastStoredBlockHeight = blocks[blocks.length -1].height;
                     const delegatesBlocks = blocks.filter((block) => block.generatorPublicKey === this.configHelper.getConfig().delegatePublicKey);
 
                     if (delegatesBlocks.length) {
@@ -505,6 +518,7 @@ export class Processor {
                     this.logger.debug(`(LL) Sync complete | lastChainedBlockHeight:${lastChainedBlockHeight} lastForgedBlockHeight:${lastForgedBlockHeight} lastStoredBlockHeight:${lastStoredBlockHeight}\n`)
                 }
             }
+            // TODO: what if lastStored > lastForged ?
             else {
                 loop = false;
                 this.logger.debug(`(LL) Sync complete | lastChainedBlockHeight:${lastChainedBlockHeight} lastForgedBlockHeight:${lastForgedBlockHeight} lastStoredBlockHeight:${lastStoredBlockHeight}\n`)
