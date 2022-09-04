@@ -228,7 +228,7 @@ export class Teller{
             .nonce(nonce.toFixed())
             .fee(dynfee.toFixed());
 
-        console.log("(LL) incoming pay order:", payments);
+        this.logger.debug(`(LL) incoming pay order: ${JSON.stringify(payments,null,4)}`);
         let txTotal: Utils.BigNumber = Utils.BigNumber.ZERO;
         let feeDeducted: boolean = false;
         for (const p of payments) {

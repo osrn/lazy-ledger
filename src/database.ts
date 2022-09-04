@@ -129,7 +129,7 @@ export class Database {
             .prepare("SELECT * FROM allocations a WHERE settled > 0 ORDER BY height DESC LIMIT 1")
             .get();
 
-        console.log("(LL) getLastPaid()", JSON.stringify(response, null, 4));
+        // console.log("(LL) getLastPaid()", JSON.stringify(response, null, 4));
         return response;
         //return response ? response[0] : {};
     }

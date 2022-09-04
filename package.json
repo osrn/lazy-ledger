@@ -1,7 +1,7 @@
 {
     "name": "@osrn/lazy-ledger",
     "description": "True Block Weight Reward Sharing Plugin for Solar Network",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "homepage": "https://github.com/osrn/lazy-ledger",
     "contributors": [
         "osrn <osrnnetwork@gmail.com>"
@@ -34,7 +34,11 @@
         "@solar-network/kernel": "workspace:*",
         "@solar-network/transactions": "workspace:*"
     },
-    "keywords": ["solar","tbw","plugin"],
+    "keywords": [
+        "solar",
+        "tbw",
+        "plugin"
+    ],
     "repository": {
         "type": "git",
         "url": "https://github.com/osrn/lazy-ledger.git"
