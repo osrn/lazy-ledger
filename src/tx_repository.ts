@@ -73,10 +73,10 @@ export class TxRepository {
     public async getDelegateNetRewardByHeightRange(start: number, end: number, generator: string): Promise<Utils.BigNumber> {
         const [query, parameters] = this.transactionRepository.manager.connection.driver.escapeQueryWithParameters(
            `SELECT COALESCE(SUM(amount), 0) AS amount FROM (
-                SELECT mq.height, (reward - sq.devfund + total_fee - burned_fee) AS amount
+                SELECT mq.height, (reward - sq.solfunds + total_fee - burned_fee) AS amount
                 FROM blocks mq LEFT JOIN (
-                    SELECT height, SUM(COALESCE(value::numeric,0)) AS devfund
-                    FROM blocks LEFT JOIN LATERAL jsonb_each_text(blocks.dev_fund) ON TRUE 
+                    SELECT height, SUM(COALESCE(value::numeric,0)) AS solfunds
+                    FROM blocks LEFT JOIN LATERAL jsonb_each_text(blocks.donations) ON TRUE 
                     WHERE height > :start AND height <= :end
                       AND generator_public_key = :generator
                     GROUP BY height

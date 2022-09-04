@@ -45,7 +45,7 @@ export interface IForgedBlock {
     timestamp: number; 
     delegate: string; 
     reward: Utils.BigNumber;
-    devfund: Utils.BigNumber;
+    solfunds: Utils.BigNumber;
     fees: Utils.BigNumber;
     burnedFees: Utils.BigNumber;
     votes: Utils.BigNumber;

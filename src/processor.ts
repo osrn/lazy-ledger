@@ -249,7 +249,7 @@ export class Processor {
                                     // recalculate allotments for all voters with the new vote distribution
                                     const validVotes = lastVoterAllocation.map( o => o.validVote).reduce((prev, curr) => prev.plus(curr), Utils.BigNumber.ZERO);
                                     const earned_tx_fees = lastForgedBlock.fees.minus(lastForgedBlock.burnedFees);
-                                    const netReward = lastForgedBlock.reward.minus(lastForgedBlock.devfund).plus(this.configHelper.getConfig().shareEarnedFees ? earned_tx_fees : Utils.BigNumber.ZERO);
+                                    const netReward = lastForgedBlock.reward.minus(lastForgedBlock.solfunds).plus(this.configHelper.getConfig().shareEarnedFees ? earned_tx_fees : Utils.BigNumber.ZERO);
                                     lastVoterAllocation.forEach(v => v.allotment = validVotes.isZero() ? 
                                         Utils.BigNumber.ZERO : netReward.times(Math.round(v.shareRatio * 100)).div(10000).times(v.validVote).div(validVotes)
                                     );
@@ -302,7 +302,7 @@ export class Processor {
                                     // recalculate allotments for all voters with the new vote distribution
                                     const validVotes = lastVoterAllocation.map( o => o.validVote).reduce((prev, curr) => prev.plus(curr), Utils.BigNumber.ZERO);
                                     const earned_tx_fees = lastForgedBlock.fees.minus(lastForgedBlock.burnedFees);
-                                    const netReward = lastForgedBlock.reward.minus(lastForgedBlock.devfund).plus(this.configHelper.getConfig().shareEarnedFees ? earned_tx_fees : Utils.BigNumber.ZERO);
+                                    const netReward = lastForgedBlock.reward.minus(lastForgedBlock.solfunds).plus(this.configHelper.getConfig().shareEarnedFees ? earned_tx_fees : Utils.BigNumber.ZERO);
                                     lastVoterAllocation.forEach(v => v.allotment = validVotes.isZero() ? 
                                         Utils.BigNumber.ZERO : netReward.times(Math.round(v.shareRatio * 100)).div(10000).times(v.validVote).div(validVotes)
                                     );
@@ -339,13 +339,14 @@ export class Processor {
 
         for (let blockCounter = 0; blockCounter < blocks.length; blockCounter++) {
             const block: Interfaces.IBlockData = blocks[blockCounter];
+            // console.log(JSON.stringify(block,null,4));
             const round = AppUtils.roundCalculator.calculateRound(block.height);
             const generatorWallet: Contracts.State.Wallet = this.walletRepository.findByPublicKey(block.generatorPublicKey); // reading from the forged block instead of config.delegateWallet
             const generator: string = block.height == 1 ? generatorWallet.getAddress() : generatorWallet.getAttribute("delegate.username");
-            const devfund: Utils.BigNumber = Object.values(block.devFund!).reduce((a, b) => a.plus(b), Utils.BigNumber.ZERO);
+            const solfunds: Utils.BigNumber = Object.values(block.donations!).reduce((a, b) => a.plus(b), Utils.BigNumber.ZERO);
             const voters: { height:number; address: string; balance: Utils.BigNumber; percent: number; vote: Utils.BigNumber; validVote: Utils.BigNumber}[] = [];
 
-            this.logger.debug(`(LL) Processing block | round:${round.round } height:${block.height} timestamp:${block.timestamp} delegate: ${generator} reward:${block.reward} devfund:${devfund} block_fees:${block.totalFee} burned_fees:${block.burnedFee}`)
+            this.logger.debug(`(LL) Processing block | round:${round.round } height:${block.height} timestamp:${block.timestamp} delegate: ${generator} reward:${block.reward} solfunds:${solfunds} block_fees:${block.totalFee} burned_fees:${block.burnedFee}`)
 
             const plan = this.configHelper.getPlan(block.height, block.timestamp);
             const voter_roll = await this.transactionRepository.getDelegateVotesByHeight(block.height, generator, block.generatorPublicKey);
@@ -386,7 +387,7 @@ export class Processor {
                 timestamp: block.timestamp, 
                 delegate: generator, 
                 reward: block.reward, 
-                devfund: devfund, 
+                solfunds: solfunds, 
                 fees: block.totalFee, 
                 burnedFees: block.burnedFee === undefined ? Utils.BigNumber.ZERO : block.burnedFee, 
                 votes: votes,
@@ -396,7 +397,7 @@ export class Processor {
             });
 
             const earned_tx_fees = block.totalFee.minus(block.burnedFee!);
-            const netReward = block.reward.minus(devfund).plus(this.configHelper.getConfig().shareEarnedFees ? earned_tx_fees : Utils.BigNumber.ZERO);
+            const netReward = block.reward.minus(solfunds).plus(this.configHelper.getConfig().shareEarnedFees ? earned_tx_fees : Utils.BigNumber.ZERO);
             //console.log(`(LL) allocations before\n${JSON.stringify(allocations)}`);
 
             for (const r of plan.reserves) {

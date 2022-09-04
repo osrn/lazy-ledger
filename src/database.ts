@@ -15,30 +15,35 @@ export class Database {
     );
 
     public async boot(): Promise<void> {
-        //SQLITE field data type definitions are just documentation
+        //NOTE: SQLITE fields data type definitions are just documentation
         this.database.exec(`
             PRAGMA journal_mode=WAL;
-            CREATE TABLE IF NOT EXISTS forged_blocks (round INTEGER NOT NULL, height INTEGER NOT NULL PRIMARY KEY, timestamp NUMERIC NOT NULL, delegate TEXT NOT NULL, reward TEXT NOT NULL, devfund TEXT NOT NULL, fees TEXT NOT NULL, burnedFees TEXT NOT NULL, votes TEXT, validVotes TEXT, orgValidVotes TEXT, voterCount INTEGER) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS forged_blocks (round INTEGER NOT NULL, height INTEGER NOT NULL PRIMARY KEY, timestamp NUMERIC NOT NULL, delegate TEXT NOT NULL, reward TEXT NOT NULL, solfunds TEXT NOT NULL, fees TEXT NOT NULL, burnedFees TEXT NOT NULL, votes TEXT, validVotes TEXT, orgValidVotes TEXT, voterCount INTEGER) WITHOUT ROWID;
             CREATE TABLE IF NOT EXISTS missed_blocks (round INTEGER NOT NULL, height INTEGER NOT NULL, delegate TEXT NOT NULL, timestamp NUMERIC PRIMARY KEY NOT NULL) WITHOUT ROWID;
             CREATE TABLE IF NOT EXISTS allocations (height INTEGER NOT NULL, address TEXT NOT NULL, payeeType INTEGER NOT NULL, balance TEXT NOT NULL, orgBalance TEXT NOT NULL, votePercent INTEGER NOT NULL, orgVotePercent INTEGER NOT NULL, validVote TEXT NOT NULL, shareRatio INTEGER, allotment TEXT, booked NUMERIC, transactionId TEXT, settled NUMERIC, PRIMARY KEY (height, address, payeeType)) WITHOUT ROWID;
             CREATE VIEW IF NOT EXISTS missed_rounds AS SELECT missed_blocks.* FROM missed_blocks LEFT OUTER JOIN forged_blocks ON missed_blocks.delegate = forged_blocks.delegate AND missed_blocks.round = forged_blocks.round WHERE forged_blocks.delegate IS NULL;
-            CREATE VIEW IF NOT EXISTS forged_blocks_human AS
+            DROP VIEW IF EXISTS forged_blocks_human;
+            CREATE VIEW forged_blocks_human AS
                 SELECT round, height, strftime('%Y%m%d-%H%M%S', timestamp+1647453600, 'unixepoch') AS forgedTime, 
-                    reward, devfund, fees, burnedFees, 
-                    (reward - devfund)/100000000.0 AS earnedRewards, 
+                    reward/100000000.0 as reward, solfunds/100000000.0 as solfunds, fees/100000000.0 as fees, burnedFees/100000000.0 as burnedFees, 
+                    (reward - solfunds)/100000000.0 AS earnedRewards, 
                     (fees - burnedFees)/100000000.0 AS earnedFees, 
-                    (reward - devfund + fees - burnedFees)/100000000.0 AS netReward, 
+                    (reward - solfunds + fees - burnedFees)/100000000.0 AS netReward, 
                     voterCount AS voters, votes/100000000.0 AS votes, validVotes/100000000.0 AS validVotes 
                 FROM forged_blocks;
-            CREATE VIEW IF NOT EXISTS allocated_human AS
-                SELECT height, address, payeeType, balance/100000000.0 AS balance, votePercent, validVote/100000000.0 AS validVote, 
+            DROP VIEW IF EXISTS allocated_human;
+            CREATE VIEW allocated_human AS
+                SELECT height, address, payeeType, balance/100000000.0 AS balance, votePercent, 
+                    balance * votePercent / 100 / 100000000.0 as vote, validVote/100000000.0 AS validVote, 
                     shareRatio, allotment/100000000.0 AS allotment, strftime('%Y%m%d-%H%M%S', booked, 'unixepoch') AS bookedTime,
                     transactionId, CASE WHEN settled = 0 THEN 0 ELSE strftime('%Y%m%d-%H%M%S', settled , 'unixepoch') END AS settledTime, 
                     orgBalance/100000000.0 AS orgBalance, orgVotePercent
-                FROM allocations ORDER BY height DESC;
-            CREATE VIEW IF NOT EXISTS the_ledger AS
+                FROM allocations ORDER BY height DESC;            
+            DROP VIEW IF EXISTS the_ledger;
+            CREATE VIEW the_ledger AS
                 SELECT b.round, a.height, b.forgedTime, b.reward, b.earnedRewards, b.earnedFees, b.netReward, 
-                b.validVotes, a.address, a.payeeType, a.validVote, a.shareRatio, a.allotment, a.bookedTime, a.transactionId, a.settledTime 
+                    b.validVotes, a.address, a.payeeType, a.balance, a.votePercent, a.vote, a.validVote, 
+                    a.shareRatio, a.allotment, a.bookedTime, a.transactionId, a.settledTime, a.orgBalance, a.orgVotePercent  
                 FROM allocated_human a LEFT JOIN forged_blocks_human b ON a.height = b.height;
             CREATE INDEX IF NOT EXISTS forged_blocks_delegate_timestamp ON forged_blocks (delegate, timestamp);
             CREATE INDEX IF NOT EXISTS forged_blocks_delegate_round on forged_blocks (delegate, round);
@@ -85,7 +90,7 @@ export class Database {
             .get();
 
         response.reward = Utils.BigNumber.make(response.reward);
-        response.devfund = Utils.BigNumber.make(response.devfund);
+        response.solfunds = Utils.BigNumber.make(response.solfunds);
         response.fees = Utils.BigNumber.make(response.fees);
         response.burnedFees = Utils.BigNumber.make(response.burnedFees);
         response.votes = Utils.BigNumber.make(response.votes);
@@ -293,7 +298,7 @@ export class Database {
     ): void {
         // console.log(`(LL) allocations:\n ${JSON.stringify(allocations)}`);
         const insertForged: SQLite3.Statement<any[]> = this.database.prepare(
-            "INSERT INTO forged_blocks VALUES (:round, :height, :timestamp, :delegate, :reward, :devfund, :fees, :burnedFees, :votes, :validVotes, :orgValidVotes, :voterCount)",
+            "INSERT INTO forged_blocks VALUES (:round, :height, :timestamp, :delegate, :reward, :solfunds, :fees, :burnedFees, :votes, :validVotes, :orgValidVotes, :voterCount)",
         );
         const insertMissed: SQLite3.Statement<any[]> = this.database.prepare(
             "INSERT INTO missed_blocks VALUES (:round, :height, :delegate, :timestamp)",
@@ -326,7 +331,7 @@ export class Database {
                         timestamp: block.timestamp,
                         delegate: block.delegate,
                         reward: block.reward.toFixed(),
-                        devfund: block.devfund.toFixed(),
+                        solfunds: block.solfunds.toFixed(),
                         fees: block.fees.toFixed(),
                         burnedFees: block.burnedFees.toFixed(),
                         votes: block.votes.toFixed(),
