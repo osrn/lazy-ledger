@@ -64,7 +64,8 @@ export class TxRepository {
         // Get inbound Supply
         let balance = (await this.getDelegateNetRewardByHeightRange(start, end, public_key))
                       .plus(await this.getInboundTotalByHeightRange(start, end, address))
-                      .minus(await this.getOutboundTotalByHeightRange(start, end, public_key));
+                      .plus(await this.getProtocolDonationsByHeightRange(start, end, address))
+                      .minus(await this.getOutboundTotalByHeightRange(start, end, address));
 
         return balance;
         //return balance;
@@ -74,15 +75,13 @@ export class TxRepository {
         const [query, parameters] = this.transactionRepository.manager.connection.driver.escapeQueryWithParameters(
            `SELECT COALESCE(SUM(amount), 0) AS amount FROM (
                 SELECT mq.height, (reward - sq.solfunds + total_fee - burned_fee) AS amount
-                FROM blocks mq LEFT JOIN (
+                FROM blocks mq INNER JOIN (
                     SELECT height, SUM(COALESCE(value::numeric,0)) AS solfunds
                     FROM blocks LEFT JOIN LATERAL jsonb_each_text(blocks.donations) ON TRUE 
                     WHERE height > :start AND height <= :end
                       AND generator_public_key = :generator
                     GROUP BY height
                 ) AS sq ON sq.height = mq.height
-                WHERE mq.height > :start AND mq.height <= :end
-                  AND mq.generator_public_key = :generator
             ) AS zreport`,
             { start, end, generator },
             {},
@@ -90,6 +89,21 @@ export class TxRepository {
         //console.log(`query: ${query} params: ${parameters}`)
         const qresult = await this.transactionRepository.query(query, parameters);
         //console.log(`inbound Supply result: ${qresult[0].amount}`);
+        return Utils.BigNumber.make(qresult[0].amount || Utils.BigNumber.ZERO);
+    }
+
+    public async getProtocolDonationsByHeightRange(start: number, end: number, receiver: string): Promise<Utils.BigNumber> {
+        const [query, parameters] = this.transactionRepository.manager.connection.driver.escapeQueryWithParameters(
+           `SELECT SUM(COALESCE(value::numeric,0)) AS amount
+            FROM blocks LEFT JOIN LATERAL jsonb_each_text(blocks.donations) ON TRUE
+            WHERE height > :start AND height <= :end
+              AND key = :receiver`,
+            { start, end, receiver },
+            {},
+        );
+        //console.log(`query: ${query} params: ${parameters}`)
+        const qresult = await this.transactionRepository.query(query, parameters);
+        //console.log(`Protocol donations result: ${qresult[0].amount}`);
         return Utils.BigNumber.make(qresult[0].amount || Utils.BigNumber.ZERO);
     }
 
@@ -146,7 +160,7 @@ export class TxRepository {
                 SELECT id, block_height, COALESCE(transactions.amount,0) + COALESCE(tx.amount,0) AS amount
                 FROM transactions LEFT JOIN LATERAL jsonb_to_recordset(transactions.asset->'transfers') AS tx(amount bigint, "recipientId" text) ON TRUE
                 WHERE block_height > :start AND block_height <= :end
-                  AND sender_public_key = :sender
+                  AND sender_id = :sender
                   AND type NOT IN (:...txtypes)
             ) AS zreport`,
             { start, end, sender, txtypes },
@@ -162,9 +176,9 @@ export class TxRepository {
            `SELECT COALESCE(SUM(amount),0) AS amount FROM (
                 SELECT * FROM transactions
                 WHERE block_height > :start AND block_height <= :end
-                AND "sender_public_key" = :sender
+                AND sender_id = :sender
                 AND type_group = ${Enums.TransactionTypeGroup.Core}
-                AND "type" = ${Enums.TransactionType.Core.HtlcLock} 
+                AND type = ${Enums.TransactionType.Core.HtlcLock} 
                 AND id IN (
                     SELECT asset ->'claim'->>'lockTransactionId' FROM transactions 
                     WHERE block_height > :start AND block_height <= :end 
@@ -184,8 +198,8 @@ export class TxRepository {
         [query, parameters] = this.transactionRepository.manager.connection.driver.escapeQueryWithParameters(
            `SELECT COALESCE(SUM(fee),0) AS amount FROM (
                 SELECT * FROM transactions
-                WHERE "block_height" > :start AND "block_height" <= :end
-                  AND sender_public_key = :sender
+                WHERE block_height > :start AND block_height <= :end
+                  AND sender_id = :sender
             ) AS zreport`,
             { start, end, sender },
             {},

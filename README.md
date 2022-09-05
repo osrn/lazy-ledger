@@ -12,11 +12,11 @@ A ledger record is composed of following metadata:
 
 All timestamps are unix except forged time, which is Solar epochstamp.
 
-[^1]: block reward less developer fund
+[^1]: block reward less protocol level fund donations
 
 [^2]: block transaction fees less burned fees
 
-[^3]: valid amount after mincap, maxcap, blacklist processing
+[^3]: valid amount after mincap, maxcap, blacklist and anti-bot processing
 
 Following the boot sequence plugin retrieves all past forged blocks from the core database, calculating stakeholders and allocations valid for the block's height & timestamp using the corresponding plan. Following initial sync, Ledger is updated in real time triggered by the core events.
 
@@ -27,7 +27,13 @@ The plugin can optionally be used for bookkeeping only; handling payments extern
 [^4]: `.local/share/solar-core/{mainnet|testnet}/lazy-ledger.sqlite`
 
 ### Voter protection
-Plugin employs a protection mechanism against malicious bots - which make a roundtrip of votes &| funds among several addresses within the round - by looking ahead one forging cycle and reducing the valid votes of the offending addresses for the last block as per their actions. Consequently last block allocation distribution recalculated to the benefit of all stakeholders. Offending address votes are recalculated only when voting percentage is reduced or an outbound transfer is made. No action taken if vote percent increases or funds received.
+Plugin employs a protection mechanism against malicious bots (those making a roundtrip of votes &| funds among several addresses within the round) by looking ahead one forging cycle and reducing the valid votes of the offending addresses for the last block as per their actions. Consequently last block allocation distribution recalculated to the benefit of all stakeholders.
+
+Offending address votes are recalculated only when:
+1. voting percentage is reduced
+2. an outbound transfer is made
+
+No action taken if **vote percent increases** or **funds received** or the **allocation for that block is already in transaction pool**.
 
 ## Installation
 ```bash
@@ -47,7 +53,7 @@ ln -s ~/solar-core/plugins/lazy-ledger lazy-ledger
 ```
 
 ## Configuration
-The plugin must be configured by adding a section in `~/.config/solar-core/{mainnet|testnet}/app.json`. Add a new entry to the end of the `plugins` section within the `relay` block. A sample entry is provided [below](#sample-configuration).
+The plugin must be configured by adding a section in `~/.config/solar-core/{mainnet|testnet}/app.json`. Add a new entry to the end of the `plugins` section within the `relay` block. A sample entry is provided [below](#sample-configuration). Configuration options explanied [here](#config-options).
 
 This sample config will;
 - allocate 100% to reserve address until block height 100000, paying every 24 hours at 00:10 UTC
@@ -189,7 +195,7 @@ Not necessarily in this order;
 - [ ] Web|console dashboard
 - [ ] Telegram|Discord integration
 - [ ] Database backup
-- [ ] Custom transaction memo
+- [ ] Transaction memo customization
 - [ ] Payment periods > 24h
 
 See the [open issues](https://github.com/osrn/lazy-ledger/issues) for a full list of proposed features (and known issues).
@@ -205,8 +211,8 @@ If you have a suggestion for improvement open an issue with the tag "enhancement
 
 ## Acknowledgments
 
-* [Alessiodf](https://github.com/alessiodf/) Solar Core Developer, aka Gym, for his help and guidance, especially navigating the Core maze
-* [Galperins4](https://github.com/galperins4/) Solar Delegate, aka Goose, for many concepts developed in his Core2 & Core3 TBW scripts
+* [Alessiodf](https://github.com/alessiodf/) Solar Core Developer, aka Gym, for his help and guidance, especially navigating the Solar Core maze and his insights on inner working principles
+* [Galperins4](https://github.com/galperins4/) Solar Delegate, aka Goose, for many concepts and ideas initially developed in his TBW scripts
 
 ## License
 
