@@ -82,6 +82,8 @@ Payment plans follows a milestone principle: higher index properties override th
                     "shareEarnedFees": false,
                     "reserveGetsFees": false,
                     "postInitInstantPay": false,
+                    "antibot": true,
+                    "whitelist": [],
                     "plans": [
                         {
                             "height": 0,
@@ -142,7 +144,8 @@ Payment plans follows a milestone principle: higher index properties override th
 | shareEarnedFees | boolean | false | include earned transaction fees (=unburned 10%) in reserve, voter and donee allocations |
 | reserveGetsFees | boolean | false | when earned fees are not shared, allocate transaction fees to the first reserve address \| stays in delegate wallet otherwise) |
 | postInitInstantPay | boolean | false | make a payment run immediately after plugin starts following initial sync |
-| whitelist | string[] | [] | addresses exempt from malicious behavior check (delegate address is automatically whitelisted) |
+| antibot | boolean | true | anti-bot processing active if true |
+| whitelist | string[] | [] | addresses exempt from anti-bot processing (delegate address is automatically whitelisted) |
 
 ### Plan
 

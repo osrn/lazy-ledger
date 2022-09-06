@@ -8,6 +8,7 @@ export const defaults = {
     shareEarnedFees: false,
     reserveGetsFees: false,
     postInitInstantPay: false,
+    antibot: true,
     whitelist: [],
     plans: [
         {

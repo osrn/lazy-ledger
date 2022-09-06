@@ -13,7 +13,8 @@ export interface IConfig extends Record<string, any> {
     shareEarnedFees: boolean;   // include earned transaction fees (=unburned 10%) in reserve, voter and donee allocations
     reserveGetsFees: boolean;   // when earned fees are not shared, allocate transaction fees to the first reserve address | stays in delegate wallet otherwise)
     postInitInstantPay: boolean;// make a payment run immediately after plugin starts following initial sync
-    whitelist: string[];        // addresses exempted from malicious behavior (delegate address is automatically whitelisted)
+    antibot: boolean;           // anti-bot processing active if true
+    whitelist: string[];        // addresses exempt from anti-bot processing (delegate address is automatically whitelisted)
     delegateWallet?: Contracts.State.Wallet; // for internal use
     delegateAddress?: string;   // for internal use
     delegatePublicKey?: string; // for internal use

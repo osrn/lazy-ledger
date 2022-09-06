@@ -214,6 +214,7 @@ export class Processor {
                         await delay(100);
                     }
                     const txBlock = await this.blockRepository.findByHeight(txData.blockHeight!);
+                    const config: IConfig = this.configHelper.getConfig();
 
                     // If the transaction is in the watch list, mark the allocation payment as settled
                     if (this.txWatchPool.has(txData.id!)) {
@@ -228,11 +229,10 @@ export class Processor {
                     // Anti-bot: check for voter originated outbound transfers within 1 round following a forged block - only during real-time processing
                     // and reduce valid vote to the new wallet amount if voter wallet made an outbound transfer within the round
                     // TODO: currently checking for transfer transaction only. voter can still game the system with an HTLC-lock then immediate claim to new wallet.
-                    else if (!this.isInitialSync()) {
+                    else if (config.antibot && !this.isInitialSync()) {
                         while (this.isSyncing()) {
                             await delay(100);
                         }
-                        const config: IConfig = this.configHelper.getConfig();
                         const whitelist = [...config.whitelist, config.delegateAddress];
                         const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
                         const lastVoterAllocation: IAllocation[] = this.sqlite.getLastVoterAllocation();
@@ -284,7 +284,7 @@ export class Processor {
 
                 // Anti-bot: check for vote changes within 1 round following a forged block - only during real-time processing
                 // and reduce the valid vote to the new voting amount
-                if (!this.isInitialSync() && data.previousVotes && Object.keys(data.previousVotes).includes(config.delegate)) {
+                if (config.antibot && !this.isInitialSync() && data.previousVotes && Object.keys(data.previousVotes).includes(config.delegate)) {
                     while (this.isSyncing()) {
                         await delay(100);
                     }
