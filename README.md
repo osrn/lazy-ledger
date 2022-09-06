@@ -177,9 +177,11 @@ Payment plans follows a milestone principle: higher index properties override th
 Configure, then restart relay. First time sync may take ~10+mins for 1.2M blocks depending on the node capacity.
 
 ## CLI
-`solar ll:alloc (height)` : shows the block allocation at last block or at block height.
+`solar ll:alloc [height]` : shows the block allocation at given block height. Last block if argument skipped.
 
-`solar ll:rollback height` : deletes all records starting with the first block of the round for the given height.
+`solar ll:lastpaid [--all]` : shows the last paid allocations. summary if flag skipped.
+
+`solar ll:rollback <height>` : deletes all records starting with (and including) the first block of the round for the given height.
 
 ## Logs
 Uses the core logger with (LL) prefix. Type `pm2 logs solar-relay` or `less -R +F ~/.pm2/logs/solar-relay-out.log` to watch the logs in real time. `grep "(LL)" ~/.pm2/logs/solar-relay-out.log` or `less -R ~/.pm2/logs/solar-relay-out.log` then less command `&(LL)` to filter for Lazy-Ledger output.

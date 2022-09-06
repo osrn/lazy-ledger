@@ -125,14 +125,20 @@ export class Database {
         return response;
     }
 
-    public getLastPaid(): IForgedBlock {
-        const response = this.database
-            .prepare("SELECT * FROM allocations a WHERE settled > 0 ORDER BY height DESC LIMIT 1")
+    public getLastPaidSummary(): { round: number; height: number; transactionId: string, settledTime: string } {
+        const result = this.database
+            .prepare(`SELECT round, height, transactionId, settledTime FROM the_ledger WHERE round = (SELECT MAX(round) FROM the_ledger WHERE settledTime != 0) ORDER BY settledTime DESC LIMIT 1`)
             .get();
+        
+        return result;
+    }
 
-        // console.log("(LL) getLastPaid()", JSON.stringify(response, null, 4));
-        return response;
-        //return response ? response[0] : {};
+    public getLastPaidVoterAllocation(): any {
+        const result = this.database
+            .prepare(`SELECT * FROM the_ledger WHERE round = (SELECT MAX(round) FROM the_ledger WHERE settledTime > 0)`)
+            .all();
+        
+        return result;
     }
 
     public getMissed(type: string, username: string, height: number): { height: number; timestamp: number }[] {
