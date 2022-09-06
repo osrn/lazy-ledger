@@ -1,4 +1,4 @@
-import { Managers, Utils } from "@solar-network/crypto";
+import { Constants, Managers, Utils } from "@solar-network/crypto";
 import { Container, Contracts } from "@solar-network/kernel";
 import SQLite3 from "better-sqlite3";
 import { IAllocation, IBill, IForgedBlock, PayeeTypes } from "./interfaces";
@@ -25,6 +25,7 @@ export class Database {
     public async boot(): Promise<void> {
         this.init();
         //NOTE: SQLITE fields data type definitions are just documentation
+        const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         this.database.exec(`
             PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS forged_blocks (round INTEGER NOT NULL, height INTEGER NOT NULL PRIMARY KEY, timestamp NUMERIC NOT NULL, delegate TEXT NOT NULL, reward TEXT NOT NULL, solfunds TEXT NOT NULL, fees TEXT NOT NULL, burnedFees TEXT NOT NULL, votes TEXT, validVotes TEXT, orgValidVotes TEXT, voterCount INTEGER) WITHOUT ROWID;
@@ -33,20 +34,20 @@ export class Database {
             CREATE VIEW IF NOT EXISTS missed_rounds AS SELECT missed_blocks.* FROM missed_blocks LEFT OUTER JOIN forged_blocks ON missed_blocks.delegate = forged_blocks.delegate AND missed_blocks.round = forged_blocks.round WHERE forged_blocks.delegate IS NULL;
             DROP VIEW IF EXISTS forged_blocks_human;
             CREATE VIEW forged_blocks_human AS
-                SELECT round, height, strftime('%Y%m%d-%H%M%S', timestamp+1647453600, 'unixepoch') AS forgedTime, 
-                    reward/100000000.0 as reward, solfunds/100000000.0 as solfunds, fees/100000000.0 as fees, burnedFees/100000000.0 as burnedFees, 
-                    (reward - solfunds)/100000000.0 AS earnedRewards, 
-                    (fees - burnedFees)/100000000.0 AS earnedFees, 
-                    (reward - solfunds + fees - burnedFees)/100000000.0 AS netReward, 
-                    voterCount AS voters, votes/100000000.0 AS votes, validVotes/100000000.0 AS validVotes 
+                SELECT round, height, strftime('%Y%m%d-%H%M%S', timestamp+${t0}, 'unixepoch') AS forgedTime, 
+                    reward/${Constants.SATOSHI}.0 as reward, solfunds/${Constants.SATOSHI}.0 as solfunds, fees/${Constants.SATOSHI}.0 as fees, burnedFees/${Constants.SATOSHI}.0 as burnedFees, 
+                    (reward - solfunds)/${Constants.SATOSHI}.0 AS earnedRewards, 
+                    (fees - burnedFees)/${Constants.SATOSHI}.0 AS earnedFees, 
+                    (reward - solfunds + fees - burnedFees)/${Constants.SATOSHI}.0 AS netReward, 
+                    voterCount AS voters, votes/${Constants.SATOSHI}.0 AS votes, validVotes/${Constants.SATOSHI}.0 AS validVotes 
                 FROM forged_blocks;
             DROP VIEW IF EXISTS allocated_human;
             CREATE VIEW allocated_human AS
-                SELECT height, address, payeeType, balance/100000000.0 AS balance, votePercent, 
-                    balance * votePercent / 100 / 100000000.0 as vote, validVote/100000000.0 AS validVote, 
-                    shareRatio, allotment/100000000.0 AS allotment, strftime('%Y%m%d-%H%M%S', booked, 'unixepoch') AS bookedTime, 
+                SELECT height, address, payeeType, balance/${Constants.SATOSHI}.0 AS balance, votePercent, 
+                    balance * votePercent / 100 / ${Constants.SATOSHI}.0 as vote, validVote/${Constants.SATOSHI}.0 AS validVote, 
+                    shareRatio, allotment/${Constants.SATOSHI}.0 AS allotment, strftime('%Y%m%d-%H%M%S', booked, 'unixepoch') AS bookedTime, 
                     transactionId, CASE WHEN settled = 0 THEN 0 ELSE strftime('%Y%m%d-%H%M%S', settled , 'unixepoch') END AS settledTime, 
-                    orgBalance/100000000.0 AS orgBalance, orgVotePercent
+                    orgBalance/${Constants.SATOSHI}.0 AS orgBalance, orgVotePercent
                 FROM allocations ORDER BY height DESC;
             DROP VIEW IF EXISTS the_ledger;
             CREATE VIEW the_ledger AS
