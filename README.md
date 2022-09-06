@@ -61,7 +61,7 @@ This sample config will;
 - allocate 90% to voters, 10% to reserve address between 2022-08-15T00:00:00.000Z and 2022-08-22T00:00:00.000Z, paying every 6 hours at 10 minutes past UTC.
 - allocate 50% to voters, 50% to reserve address after 2022-08-22T00:00:00.000, paying every 24 hours at 00:10 UTC
 
-Payment plans follows a milestone principle: higher index properties override the lower ones, where an effective plan is produced against the height and timestamp for a given forged block. There is no in built plan sorting, thus linear scheduling is your responsibility.
+Payment plans follows a milestone principle: higher index properties override the lower ones, where an effective plan is produced against the height and timestamp for a given forged block. There is no in built plan sorting, thus **_linear scheduling is your responsibility_**.
 
 > You should always take your plans' payment schedule into consideration should you ever need to execute `solar snapshot:truncate|rollback` on your relay independent of the rest of the network; as this will revert the plugin database to rollback height after relay restarts, erasing any subsequent payment records. This may lead to duplicate payments for previously distributed rewards unless the whole network had rolled back. Making a database backup in advance and setting the base plan height to first unpaid allocation's forged block is a recommended practice before any such destructive operation.
 
@@ -175,6 +175,8 @@ Configure, then restart relay. First time sync may take ~10+mins for 1.2M blocks
 
 ## CLI
 `solar ll:alloc (height)` : shows the block allocation at last block or at block height.
+
+`solar ll:rollback height` : deletes all records starting with the first block of the round for the given height.
 
 ## Logs
 Uses the core logger with (LL) prefix. Type `pm2 logs solar-relay` or `less -R +F ~/.pm2/logs/solar-relay-out.log` to watch the logs in real time. `grep "(LL)" ~/.pm2/logs/solar-relay-out.log` or `less -R ~/.pm2/logs/solar-relay-out.log` then less command `&(LL)` to filter for Lazy-Ledger output.
