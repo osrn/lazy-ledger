@@ -401,15 +401,15 @@ export class Database {
         })();
     }
 
-    public truncate(): void {
+    public rollback(height: number): void {
         this.triggers(false);
-        const truncateForged: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM forged_blocks");
-        const truncateMissed: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM missed_blocks");
-        const truncateAllocated: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM allocations");
+        const truncateForged: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM forged_blocks WHERE height >= :height");
+        const truncateMissed: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM missed_blocks WHERE height >= :height");
+        const truncateAllocated: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM allocations WHERE height >= :height");
         this.database.transaction(() => {
-            truncateForged.run();
-            truncateMissed.run();
-            truncateAllocated.run();
+            truncateForged.run({height});
+            truncateMissed.run({height});
+            truncateAllocated.run({height});
         })();
         this.triggers(true);
     }
