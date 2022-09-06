@@ -333,8 +333,8 @@ export class Teller{
             object_array.reduce((acc, curr) => {
                 const group = group_by_keys.map(k => curr[k]).join('-');
                 acc[group] = acc[group] || Object.fromEntries(group_by_keys.map(k => [k, curr[k]]).concat(sum_keys.map(k => [k, 0])));
-                sum_keys.forEach(k => acc[group][k] += curr[k]);
-                //TODO: use Utils.BigNumber arithmetic here?
+                // sum_keys.forEach(k => acc[group][k] += curr[k]);
+                sum_keys.forEach(k => acc[group][k] = Utils.BigNumber.make(acc[group][k]).plus(curr[k]));
                 return acc;
             }, {})
         );
