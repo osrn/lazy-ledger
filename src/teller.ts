@@ -95,6 +95,7 @@ export class Teller{
 
     public instantPay(): void {
         if (!this.active) {
+            this.logger.debug(`(LL) Post-init instant payment request granted.`);
             this.getBill();
         }
     }
