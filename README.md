@@ -187,15 +187,14 @@ Configure, then restart relay. First time sync may take ~10+mins for 1.2M blocks
 Uses the core logger with (LL) prefix. Type `pm2 logs solar-relay` or `less -R +F ~/.pm2/logs/solar-relay-out.log` to watch the logs in real time. `grep "(LL)" ~/.pm2/logs/solar-relay-out.log` or `less -R ~/.pm2/logs/solar-relay-out.log` then less command `&(LL)` to filter for Lazy-Ledger output.
 
 ## Accuracy checks
-Querying the database[^4] for last block voters<br>
- `SELECT * FROM allocations WHERE height = (SELECT MAX(height) FROM forged_blocks) AND payeeType=1;`
+Query the database[^4] for last block voters just after you forged a block with `solar ll:alloc`,
 
-will list:<br>
-`height|address|payeeType|balance (after bot)|original balance|votePercent(after bot)|original vote percent|validVote|(plan)shareRatio|allotment|booked timestamp|transactionId|settled timestamp`
+then compare the `balance|orgBalance`, `votePercent|orgVotePercent` and `vote|validVote` against api results at `https://tapi.solar.org/api/delegates/username/voters`, within the window of one forging cycle (or block time if any of the protocol level funded wallets are voting for you). Note that `balance`, `votePercent` and `validVote` are effected by cap, blacklist and anti-bot.
 
-then compare the `balance` and `validVote` against api query at `https://tapi.solar.org/api/delegates/username/voters`, within the window of one forging cycle. Note that the validVote is effected by caps, blacklist and anti-bot actions.
+You are welcome to make any other accuracy calculation by direct database query.
 
-You are welcome to make manual calculations for allocation accuracy. 
+## Version Info
+- Release 0.0.5 - requires `@solar-network/: ^4.1.0 || ^4.1.0-next.5`
 ## Roadmap
 Not necessarily in this order;
 
