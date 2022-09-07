@@ -94,9 +94,9 @@ export class Database {
         return result;
     }
 
-    public getTheLedgerAt(height: number = 0): Object[] {
+    public getTheLedgerAt(round: number = 0): Object[] {
         const result = this.database
-            .prepare(`SELECT * FROM the_ledger WHERE height=${height ? height : "(SELECT MAX(height) FROM allocations)"}`)
+            .prepare(`SELECT * FROM the_ledger WHERE round=${round ? round : "(SELECT MAX(round) FROM forged_blocks)"}`)
             .all();
         
         return result;

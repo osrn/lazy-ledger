@@ -159,7 +159,7 @@ Payment plans follows a milestone principle: higher index properties override th
 | mincap | number | 0 | minimum voter wallet balance eligible for rewards allocation |
 | maxcap | number | 0 | maximum vote weight from an address |
 | blacklist | string[] | [] | addresses blacklisted from rewards allocation |
-| payperiod | number | 24 | Payment cycle - every [0,1,2,3,4,6,8,12,24] hours. Zero if plugin should not handle payment |
+| payperiod | number | 24 | Payment cycle - every [0,1,2,3,4,6,8,12,24] hours. If zero will not handle payment - except the case when `postInitInstantPay` is true|
 | payoffset | number | 0 | new cycle begins at UTC 00:00 + offset hrs. 0-23. |
 | guardtime | number | 10 | delay in minutes before preparing the payment order at the end of a payment cycle - precaution against block reverts. 0-59. |
 
@@ -177,7 +177,7 @@ Payment plans follows a milestone principle: higher index properties override th
 Configure, then restart relay. First time sync may take ~10+mins for 1.2M blocks depending on the node capacity.
 
 ## CLI
-`solar ll:alloc [height]` : shows the block allocation at given block height. Last block if argument skipped.
+`solar ll:alloc [--round m] [--height n]` : shows the block allocation at given round or height. Last round if arguments skipped.
 
 `solar ll:lastpaid [--all]` : shows the last paid allocations. summary if flag skipped.
 
