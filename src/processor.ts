@@ -235,7 +235,7 @@ export class Processor {
                         }
                         const whitelist = [...config.whitelist, config.delegateAddress];
                         const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
-                        const lastVoterAllocation: IAllocation[] = this.sqlite.getLastVoterAllocation();
+                        const lastVoterAllocation: IAllocation[] = this.sqlite.getVoterAllocationAtHeight();
 
                         if (lastForgedBlock && lastVoterAllocation.length > 0) { // always true unless brand new delegate
                             const txRound = AppUtils.roundCalculator.calculateRound(txData.blockHeight!);
@@ -289,7 +289,7 @@ export class Processor {
                         await delay(100);
                     }
                     const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
-                    const lastVoterAllocation: IAllocation[] = this.sqlite.getLastVoterAllocation();
+                    const lastVoterAllocation: IAllocation[] = this.sqlite.getVoterAllocationAtHeight();
                     
                     if (lastForgedBlock && lastVoterAllocation.length > 0) { // always true unless brand new delegate
                         const txRound = AppUtils.roundCalculator.calculateRound(data.transaction.blockHeight);
@@ -364,7 +364,7 @@ export class Processor {
 
             const plan = this.configHelper.getPlan(block.height, block.timestamp);
             const voter_roll = await this.transactionRepository.getDelegateVotesByHeight(block.height, generator, block.generatorPublicKey);
-            const lastVoterAllocation: IAllocation[] = this.sqlite.getLastVoterAllocation();
+            const lastVoterAllocation: IAllocation[] = this.sqlite.getVoterAllocationAtHeight();
             for (const v of voter_roll) {
                 const walletAddress: string = this.walletRepository.findByPublicKey(v.publicKey).getAddress();
                 let startFrom: number = 0;

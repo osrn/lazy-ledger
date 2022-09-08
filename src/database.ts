@@ -80,28 +80,6 @@ export class Database {
         return response || 0;
     }
 
-    public getLastVoterAllocation(height: number = 0): IAllocation[] {
-        const result = this.database
-            .prepare(`SELECT * FROM allocations WHERE height=${height ? height : "(SELECT MAX(height) FROM allocations)"} AND payeeType=${PayeeTypes.voter}`)
-            .all();
-        
-        (result as unknown as IAllocation[]).forEach(r => { 
-            r.balance = Utils.BigNumber.make(r.balance);
-            r.orgBalance = Utils.BigNumber.make(r.orgBalance);
-            r.allotment = Utils.BigNumber.make(r.allotment);
-            r.validVote = Utils.BigNumber.make(r.validVote);
-        });
-        return result;
-    }
-
-    public getTheLedgerAt(round: number = 0): Object[] {
-        const result = this.database
-            .prepare(`SELECT * FROM the_ledger WHERE round=${round ? round : "(SELECT MAX(round) FROM forged_blocks)"}`)
-            .all();
-        
-        return result;
-    }
-
     public getLastForged(): IForgedBlock {
         const response = this.database
             .prepare("SELECT * FROM forged_blocks ORDER BY height DESC LIMIT 1")
@@ -115,6 +93,36 @@ export class Database {
         response.validVotes = Utils.BigNumber.make(response.validVotes);
         response.orgValidVotes = Utils.BigNumber.make(response.orgValidVotes);
         return response;
+    }
+
+    public getVoterAllocationAtHeight(height: number = 0): IAllocation[] {
+        const result = this.database
+            .prepare(`SELECT * FROM allocations WHERE height=${height ? height : "(SELECT MAX(height) FROM allocations)"} AND payeeType=${PayeeTypes.voter}`)
+            .all();
+        
+        (result as unknown as IAllocation[]).forEach(r => { 
+            r.balance = Utils.BigNumber.make(r.balance);
+            r.orgBalance = Utils.BigNumber.make(r.orgBalance);
+            r.allotment = Utils.BigNumber.make(r.allotment);
+            r.validVote = Utils.BigNumber.make(r.validVote);
+        });
+        return result;
+    }
+
+    public getLedgerAtHeight(height: number = 0): Object[] {
+        const result = this.database
+            .prepare(`SELECT * FROM the_ledger WHERE height=${height ? height : "(SELECT MAX(height) FROM forged_blocks)"}`)
+            .all();
+        
+        return result;
+    }
+
+    public getLedgerAtRound(round: number = 0): Object[] {
+        const result = this.database
+            .prepare(`SELECT * FROM the_ledger WHERE round=${round ? round : "(SELECT MAX(round) FROM forged_blocks)"}`)
+            .all();
+        
+        return result;
     }
 
     public getLastPayAttempt(): IForgedBlock {
@@ -137,6 +145,59 @@ export class Database {
         const result = this.database
             .prepare(`SELECT * FROM the_ledger WHERE round = (SELECT MAX(round) FROM the_ledger WHERE settledTime > 0)`)
             .all();
+        
+        return result;
+    }
+
+    // First of, last of and number of forged blocks between two dates,
+    public getRangeBounds(start: number, end: number): { forgedBlock: number; firstForged: number, lastForged:number } {
+        const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
+        const result = this.database.prepare(
+           `SELECT COUNT(height) as forgedBlock, MIN(height) as firstForged, MAX(height) as lastForged FROM forged_blocks fb 
+            WHERE (${t0} + fb."timestamp") >= ${start}
+              AND (${t0} + fb."timestamp") < ${end}`)
+        .get();
+        
+        return result;
+    }
+
+    public getVoterCommitment(start: number, end: number): any {
+        const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
+        const result = this.database.prepare(
+           `SELECT COUNT(fb.round) AS roundCount, COUNT(al.height) AS blockCount, al.address, SUM(al.validVote <= al.nextVote) AS continuousVotes 
+            FROM forged_blocks fb INNER JOIN (
+                SELECT height, address, validVote, lead(validVote,1,0) OVER (PARTITION BY address ORDER BY height) as nextVote
+                FROM allocations
+                WHERE payeeType = 1
+                AND votePercent > 0
+            ) AS al 
+            ON fb.height = al.height
+            WHERE (${t0} + fb."timestamp") >= ${start}
+              AND (${t0} + fb."timestamp") < ${end}
+            GROUP BY al.address`)
+        .all();
+        
+        return result;
+    }
+
+    public getCommittedVoterAddresses(start: number, end: number): { address: string } [] {
+        const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
+        const result = this.database.prepare(
+           `SELECT address FROM (
+                SELECT COUNT(fb.round) AS roundCount, COUNT(al.height) AS blockCount, al.address, SUM(al.validVote <= al.nextVote) AS continuousVotes 
+                FROM forged_blocks fb INNER JOIN (
+                    SELECT height, address, validVote, lead(validVote,1,0) OVER (PARTITION BY address ORDER BY height) as nextVote
+                    FROM allocations
+                    WHERE payeeType = 1
+                    AND votePercent > 0
+                ) AS al 
+                ON fb.height = al.height
+                WHERE (${t0} + fb."timestamp") >= ${start}
+                AND (${t0} + fb."timestamp") < ${end}
+                GROUP BY al.address
+            ) AS vs 
+            WHERE continuousVotes = blockCount`)
+        .all();
         
         return result;
     }
@@ -212,8 +273,7 @@ export class Database {
 
     public getUnsettledAllocations(): string[] {
         const result = this.database
-            .prepare(`SELECT DISTINCT transactionId FROM allocations a 
-            WHERE transactionId != '' AND settled = 0`)
+            .prepare(`SELECT DISTINCT transactionId FROM allocations a WHERE transactionId != '' AND settled = 0`)
             .all();
         return result.map( (r) => r.transactionId )
     }

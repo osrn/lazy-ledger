@@ -43,7 +43,7 @@ export class Command extends Commands.Command {
             this.components.log(`Deleting data from ${round.roundHeight} ...`);
             sqlite.rollback(round.roundHeight);
             this.components.log("Rollback complete. Your last forged block allocation now is:");
-            console.log(sqlite.getTheLedgerAt());
+            console.log(sqlite.getLedgerAtRound());
         }
     }
 }

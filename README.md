@@ -177,21 +177,130 @@ Payment plans follows a milestone principle: higher index properties override th
 Configure, then restart relay. First time sync may take ~10+mins for 1.2M blocks depending on the node capacity.
 
 ## CLI
-`solar ll:alloc [--round m] [--height n]` : shows the block allocation at given round or height. Last round if arguments skipped.
+**`solar ll:alloc [--round m] [--height n]`**<br>
+shows the block allocation at given round or height; former having priority over the latter. Last round if arguments skipped.
+```bash
+Retrieving data from last block ...
+[
+  {
+    round: 24824,
+    height: 1315624,
+    forgedTime: '20220908-201736',
+    reward: 11,
+    earnedRewards: 9.9,
+    earnedFees: 0,
+    netReward: 9.9,
+    validVotes: 2323102.02340695,
+    address: 'D646b6dx3sW5NAgMDTKAZ2hdC57K1BeRaK',
+    payeeType: 1,
+    balance: 107246009.42079204,
+    votePercent: 1.89,
+    vote: 2026949.5780529696,
+    validVote: 2026949.57805296,
+    shareRatio: 20,
+    allotment: 1.7275867,
+    bookedTime: '20220908-201737',
+    transactionId: '',
+    settledTime: 0,
+    orgBalance: 107246009.42079204,
+    orgVotePercent: 1.89
+  },
+  ...
+]
+```
+---
+**`solar ll:lastpaid [--all]`**<br>
+shows the last paid allocations - summary if flag skipped.
+```bash
+solar ll:lastpaid
+Retrieving data for the last paid allocation ...
+{
+  round: 24583,
+  height: 1302858,
+  transactionId: 'f26f6ae548592eeda6c27e6e7ce2b63f01fcceedb7b9a3090c7f7ec59c4c2df8',
+  settledTime: '20220907-161312'
+}
+```
+---
+**`solar ll:commitment --start <datetime> --end <datetime>`**<br>
+shows voter commitment (continuous blocks voting balance not reduced) during a time frame
+```
+solar ll:commitment --start 2022-09-01 --end 2022-09-08
+Range contains 1425 blocks and bounds are:
+(date)     : [Thu Sep 01 2022 00:00:00 GMT+0000 (Coordinated Universal Time), Thu Sep 08 2022 00:00:00 GMT+0000 (Coordinated Universal Time))
+(unixstamp): [1661990400, 1662595200)
+(height)   : [1231808, 1306472]
 
-`solar ll:lastpaid [--all]` : shows the last paid allocations. summary if flag skipped.
+voter commitment during the range is:
+[
+  {
+    roundCount: 1425,
+    blockCount: 1425,
+    address: 'D646b6dx3sW5NAgMDTKAZ2hdC57K1BeRaK',
+    continuousVotes: 1422
+  },
+  {
+    roundCount: 1425,
+    blockCount: 1425,
+    address: 'D7ECQsnQkEgofZHyyC4kftAPTZxMLjHwHK',
+    continuousVotes: 1423
+  },
+  {
+    roundCount: 1425,
+    blockCount: 1425,
+    address: 'DA8txf4Pt3WE9c1Jth2TjeXUyicfiKUmkE',
+    continuousVotes: 1425
+  },
+  {
+    roundCount: 1425,
+    blockCount: 1425,
+    address: 'DAj5756Vb9UzQvLqeegkyVsgrH5cUJZ1tg',
+    continuousVotes: 1425
+  },
+  {
+    roundCount: 1425,
+    blockCount: 1425,
+    address: 'DHhKUBifRu4BGdznw48pGnWEwaywxozKSZ',
+    continuousVotes: 1425
+  },
+  {
+    roundCount: 1425,
+    blockCount: 1425,
+    address: 'DNyVmc4kioYEXkA37Pn9KF3ioY99VFDoAF',
+    continuousVotes: 1420
+  },
+  {
+    roundCount: 1425,
+    blockCount: 1425,
+    address: 'DTHPEZSTsL9Lz7dK6KmdNwEwTSXBJrqdkQ',
+    continuousVotes: 1311
+  }
+]
 
-`solar ll:rollback <height>` : deletes all records starting with (and including) the first block of the round for the given height.
+Committed addresses during the range, and respective valid voting balances at the beginning of the range (height 1231808) are:
+DA8txf4Pt3WE9c1Jth2TjeXUyicfiKUmkE 9770539979
+DAj5756Vb9UzQvLqeegkyVsgrH5cUJZ1tg 12330839313158
+DHhKUBifRu4BGdznw48pGnWEwaywxozKSZ 0
+```
+---
+**`solar ll:rollback <height>`**<br>
+deletes all records starting with (and including) the first block of the round for the given height.
+```bash
+solar ll:rollback 100000
+✔ This will remove all records in LL database STARTING WITH & INCLUDING height 99959 which is the first block of the round 1887 and is irreversible. Are you sure? › (y/N)
+```
 
 ## Logs
-Uses the core logger with (LL) prefix. Type `pm2 logs solar-relay` or `less -R +F ~/.pm2/logs/solar-relay-out.log` to watch the logs in real time. `grep "(LL)" ~/.pm2/logs/solar-relay-out.log` or `less -R ~/.pm2/logs/solar-relay-out.log` then less command `&(LL)` to filter for Lazy-Ledger output.
+Uses the core logger utility with (LL) prefix.<br>
+Use `pm2 logs solar-relay` or `less -R +F ~/.pm2/logs/solar-relay-out.log` to watch the logs in real time.<br>
+Use `grep "(LL)" ~/.pm2/logs/solar-relay-out.log` or `less -R ~/.pm2/logs/solar-relay-out.log` then less command `&(LL)` to filter for Lazy-Ledger output.
 
 ## Accuracy checks
 Query the database[^4] for last block voters just after you forged a block with `solar ll:alloc`,
 
-then compare the `balance|orgBalance`, `votePercent|orgVotePercent` and `vote|validVote` against api results at `https://tapi.solar.org/api/delegates/username/voters`, within the window of one forging cycle (or block time if any of the protocol level funded wallets are voting for you). Note that `balance`, `votePercent` and `validVote` are effected by cap, blacklist and anti-bot.
+then compare `balance|orgBalance`, `votePercent|orgVotePercent` and `vote|validVote` against api output at `https://tapi.solar.org/api/delegates/username/voters`, within the window of one forging cycle (or 1 block time if any of the protocol level funded wallets are voting for you). Note that `balance`, `votePercent` and `validVote` are effected by cap, blacklist and anti-bot.
 
-You are welcome to make any other accuracy calculation by direct database query.
+You are welcome to make any other accuracy checks by direct database query.
 
 ## Version Info
 - Release 0.0.5 - requires `@solar-network/: ^4.1.0 || ^4.1.0-next.5`

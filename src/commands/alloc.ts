@@ -41,6 +41,6 @@ export class Command extends Commands.Command {
         }
         round ||= 0; // if still undefined set to 0
         this.components.log(`Retrieving data from ${round > 0 ? "forged round: " + round : "last forged round"} ...`);
-        console.log(sqlite.getTheLedgerAt(round));
+        console.log(sqlite.getLedgerAtRound(round));
     }
 }
