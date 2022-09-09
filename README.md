@@ -3,39 +3,67 @@
 Solar Network Core Plugin for Rewards Bookkeeping and Payments Distribution. 
 
 ## Introduction
-Lazy-Ledger is a core plugin utilizing core functions and events to share forging rewards with voters and other stakeholders. Rewards are calculated at each forged block then allocated amongst the stakeholders in accordance with the plan in effect. The ledger is stored as a local database where an entry is recorded for each stakeholder for each block forged with an autorecovery mechanism in place in the event of a block revert or network fork autorecovery.
+Lazy-Ledger is a core plugin utilizing core functions and events to share forging rewards with voters and other stakeholders. Rewards are calculated at each forged block then allocated amongst the stakeholders in compliance with the reward sharing plan(s) configured. Mutltiple plans can be scheduled only one being active at a given block height & timestamp.
+
+The ledger is stored as a local database where an entry is recorded for each stakeholder for each block forged. An auto-recovery mechanism continuously checks for block reverts, aligning ledger database with the network.
 
 A ledger record is composed of following metadata:
 `block height`, `round`, `forged time`, `block reward`, `earned reward`[^1], `earned fees`[^2], `total valid votes`[^3], `recipient address`, `recipient type`, `valid voting balance`[^3], `share ratio`, `allotment`, `entry timestamp`, `payment transaction id`, `timestamp transaction forged`
 
 All timestamps are unix except forged time, which is Solar epochstamp.
 
-[^1]: block reward less developer fund
+[^1]: block reward less protocol level fund donations
 
 [^2]: block transaction fees less burned fees
 
-[^3]: valid amount after mincap, maxcap, blacklist processing
+[^3]: valid amount after mincap, maxcap, blacklist and anti-bot processing
 
-At first execution the plugin retrieves all past forged blocks from the core database, calculating stakeholders and allocations for each block for that point in time in accordance with the plan valid for the block's height & timestamp. Following initial sync, Ledger is updated in real time triggered by the core events.
+Following the boot sequence plugin retrieves all past forged blocks from the core database, calculating stakeholders and allocations valid for the block's height & timestamp using the corresponding plan. Following initial sync, Ledger is updated in real time triggered by the core events.
 
-A periodic payment job - governed by the plan parameters - distributes rewards to the stakeholders. Transaction fee is calculated dynamically. Transfer recipients and pool sender limits are respected. A debt is only settled when the corresponding transaction is forged, but unsettled in the case transaction is reverted afterwards.
+Governed by the plan parameters, a periodic payment job distributes rewards to the stakeholders. Transaction fee is calculated dynamically. Transfer recipients and pool sender limits are respected. A debt is only settled when the corresponding transaction is forged, but unsettled back should the transaction is reverted afterwards.
 
 The plugin can optionally be used for bookkeeping only; handling payments externally by directly accessing the database[^4].
 
-[^4]: `~/.config/solar-core/{mainnet|testnet}/lazy-ledger.sqlite3`
+[^4]: `.local/share/solar-core/{mainnet|testnet}/lazy-ledger.sqlite`
+
+### Voter protection
+Plugin employs a protection mechanism against malicious bots (those making a roundtrip of votes &| funds among several addresses within the round) by looking ahead one forging cycle and reducing the valid votes of the offending addresses for the last block as per their actions. Consequently last block allocation distribution recalculated to the benefit of all stakeholders.
+
+Offending address votes are recalculated only when:
+1. voting percentage is reduced
+2. an outbound transfer is made
+
+No action taken if **vote percent increases** or **funds received** or the **allocation for that block is already in transaction pool**.
 
 ## Installation
 ```bash
+solar plugin:install https://github.com/osrn/lazy-ledger.git
+```
+
+or
+```bash
+. ~/.solar/.env
 cd ~/solar-core/plugins
 git clone https://github.com/osrn/lazy-ledger
 cd lazy-ledger
 pnpm install && pnpm build
+cd ~/.local/share/solar-core/testnet/plugins/
+mkdir '@osrn' && cd '@osrn'
+ln -s ~/solar-core/plugins/lazy-ledger lazy-ledger
 ```
 
 ## Configuration
-The plugin must be configured by adding a section in `~/.config/solar-core/{mainnet|testnet}/app.json`. Add a new entry to the end of the `plugins` section within the `relay` block. A sample entry is provided [below](#sample-configuration).
+The plugin must be configured by adding a section in `~/.config/solar-core/{mainnet|testnet}/app.json`. Add a new entry to the end of the `plugins` section within the `relay` block. A sample entry is provided [below](#sample-configuration). Configuration options explanied [here](#config-options).
 
-Payment plans work with milestone logic: higher index properties override the lower ones, where an effective plan is produced against the height and timestamp for a given forged block. 
+This sample config will;
+- allocate 100% to reserve address until block height 100000, paying every 24 hours at 00:10 UTC
+- allocate 50% to voters, 50% to reserve address starting with block 100000 until 2022-08-14T23:59:59.999 UTC, paying every 24 hours at 00:10 UTC
+- allocate 90% to voters, 10% to reserve address between 2022-08-15T00:00:00.000Z and 2022-08-22T00:00:00.000Z, paying every 6 hours at 10 minutes past UTC.
+- allocate 50% to voters, 50% to reserve address after 2022-08-22T00:00:00.000, paying every 24 hours at 00:10 UTC
+
+Payment plans follows a milestone principle: higher index properties override the lower ones, where an effective plan is produced against the height and timestamp for a given forged block. There is no in built plan sorting, thus **_linear scheduling is your responsibility_**.
+
+> You should always take your plans' payment schedule into consideration should you ever need to execute `solar snapshot:truncate|rollback` on your relay independent of the rest of the network; as this will revert the plugin database to rollback height after relay restarts, erasing any subsequent payment records. This may lead to duplicate payments for previously distributed rewards unless the whole network had rolled back. Making a database backup in advance and setting the base plan height to first unpaid allocation's forged block is a recommended practice before any such destructive operation.
 
 ### Sample configuration
 ```json
@@ -46,7 +74,7 @@ Payment plans work with milestone logic: higher index properties override the lo
                 "package": "@osrn/lazy-ledger",
                 "options": {
                     "enabled": true,
-                    "delegate": "delegate",
+                    "delegate": "delegate_username",
                     "passphrase": "delegate wallet mnemonic phrase",
                     "excludeSelfFrTx": true,
                     "mergeAddrsInTx": false,
@@ -54,6 +82,8 @@ Payment plans work with milestone logic: higher index properties override the lo
                     "shareEarnedFees": false,
                     "reserveGetsFees": false,
                     "postInitInstantPay": false,
+                    "antibot": true,
+                    "whitelist": [],
                     "plans": [
                         {
                             "height": 0,
@@ -71,11 +101,11 @@ Payment plans work with milestone logic: higher index properties override the lo
                         },
                         {
                             "height": 100000,
-                            "share": 50,
+                            "share": 65,
                             "reserves": [
-                                {"address": "reserve_wallet_address", "share": 50}
+                                {"address": "reserve_wallet_address", "share": 35}
                             ]
-                        },
+                        }
                         {
                             "timestamp": "2022-08-15T00:00:00.000Z",
                             "share": 90,
@@ -114,6 +144,8 @@ Payment plans work with milestone logic: higher index properties override the lo
 | shareEarnedFees | boolean | false | include earned transaction fees (=unburned 10%) in reserve, voter and donee allocations |
 | reserveGetsFees | boolean | false | when earned fees are not shared, allocate transaction fees to the first reserve address \| stays in delegate wallet otherwise) |
 | postInitInstantPay | boolean | false | make a payment run immediately after plugin starts following initial sync |
+| antibot | boolean | true | anti-bot processing active if true |
+| whitelist | string[] | [] | addresses exempt from anti-bot processing (delegate address is automatically whitelisted) |
 
 ### Plan
 
@@ -127,11 +159,13 @@ Payment plans work with milestone logic: higher index properties override the lo
 | mincap | number | 0 | minimum voter wallet balance eligible for rewards allocation |
 | maxcap | number | 0 | maximum vote weight from an address |
 | blacklist | string[] | [] | addresses blacklisted from rewards allocation |
-| payperiod | number | 24 | Payment cycle - every [0,1,2,3,4,6,8,12,24] hours. Zero if plugin should not handle payment |
+| payperiod | number | 24 | Payment cycle - every [0,1,2,3,4,6,8,12,24] hours. If zero will not handle payment - except the case when `postInitInstantPay` is true|
 | payoffset | number | 0 | new cycle begins at UTC 00:00 + offset hrs. 0-23. |
 | guardtime | number | 10 | delay in minutes before preparing the payment order at the end of a payment cycle - precaution against block reverts. 0-59. |
 
 >share + reserves[].share + donations[].share = 100 recommended, but not enforced!
+
+>payperiod:24, payoffset:3, guardtime:30 will schedule payments at 00:30 Turkish time, daily for allocations from 21:00 UTC previous day to UTC 21:00 today.
 
 ### Payee
 | Name | Type | Default | Description |
@@ -140,27 +174,150 @@ Payment plans work with milestone logic: higher index properties override the lo
 | share | number | 50 | share ratio. 0-100, up to 2 decimal places | 
 
 ## Running
-Restart relay after configuration set.
+Configure, then restart relay. First time sync may take ~10+mins for 1.2M blocks depending on the node capacity.
 
+## CLI
+**`solar ll:alloc [--round m] [--height n]`**<br>
+shows the block allocation at given round or height; former having priority over the latter. Last round if arguments skipped.
+```bash
+Retrieving data from last block ...
+[
+  {
+    round: 24824,
+    height: 1315624,
+    forgedTime: '20220908-201736',
+    reward: 11,
+    earnedRewards: 9.9,
+    earnedFees: 0,
+    netReward: 9.9,
+    validVotes: 2323102.02340695,
+    address: 'D646b6dx3sW5NAgMDTKAZ2hdC57K1BeRaK',
+    payeeType: 1,
+    balance: 107246009.42079204,
+    votePercent: 1.89,
+    vote: 2026949.5780529696,
+    validVote: 2026949.57805296,
+    shareRatio: 20,
+    allotment: 1.7275867,
+    bookedTime: '20220908-201737',
+    transactionId: '',
+    settledTime: 0,
+    orgBalance: 107246009.42079204,
+    orgVotePercent: 1.89
+  },
+  ...
+]
+```
+---
+**`solar ll:lastpaid [--all]`**<br>
+shows the last paid allocations - summary if flag skipped.
+```bash
+solar ll:lastpaid
+Retrieving data for the last paid allocation ...
+{
+  round: 24583,
+  height: 1302858,
+  transactionId: 'f26f6ae548592eeda6c27e6e7ce2b63f01fcceedb7b9a3090c7f7ec59c4c2df8',
+  settledTime: '20220907-161312'
+}
+```
+---
+**`solar ll:commitment --start <datetime> --end <datetime>`**<br>
+shows voter commitment (continuous blocks voting balance not reduced) during a time frame
+```
+solar ll:commitment --start 2022-09-01 --end 2022-09-08
+Range contains 1425 blocks and bounds are:
+(date)     : [Thu Sep 01 2022 00:00:00 GMT+0000 (Coordinated Universal Time), Thu Sep 08 2022 00:00:00 GMT+0000 (Coordinated Universal Time))
+(unixstamp): [1661990400, 1662595200)
+(height)   : [1231808, 1306472]
+
+voter commitment during the range is:
+[
+  {
+    roundCount: 1425,
+    blockCount: 1425,
+    address: 'D646b6dx3sW5NAgMDTKAZ2hdC57K1BeRaK',
+    continuousVotes: 1422
+  },
+  {
+    roundCount: 1425,
+    blockCount: 1425,
+    address: 'D7ECQsnQkEgofZHyyC4kftAPTZxMLjHwHK',
+    continuousVotes: 1423
+  },
+  {
+    roundCount: 1425,
+    blockCount: 1425,
+    address: 'DA8txf4Pt3WE9c1Jth2TjeXUyicfiKUmkE',
+    continuousVotes: 1425
+  },
+  {
+    roundCount: 1425,
+    blockCount: 1425,
+    address: 'DAj5756Vb9UzQvLqeegkyVsgrH5cUJZ1tg',
+    continuousVotes: 1425
+  },
+  {
+    roundCount: 1425,
+    blockCount: 1425,
+    address: 'DHhKUBifRu4BGdznw48pGnWEwaywxozKSZ',
+    continuousVotes: 1425
+  },
+  {
+    roundCount: 1425,
+    blockCount: 1425,
+    address: 'DNyVmc4kioYEXkA37Pn9KF3ioY99VFDoAF',
+    continuousVotes: 1420
+  },
+  {
+    roundCount: 1425,
+    blockCount: 1425,
+    address: 'DTHPEZSTsL9Lz7dK6KmdNwEwTSXBJrqdkQ',
+    continuousVotes: 1311
+  }
+]
+
+Committed addresses during the range, and respective valid voting balances at the beginning of the range (height 1231808) are:
+DA8txf4Pt3WE9c1Jth2TjeXUyicfiKUmkE 9770539979
+DAj5756Vb9UzQvLqeegkyVsgrH5cUJZ1tg 12330839313158
+DHhKUBifRu4BGdznw48pGnWEwaywxozKSZ 0
+```
+---
+**`solar ll:rollback <height>`**<br>
+deletes all records starting with (and including) the first block of the round for the given height.
+```bash
+solar ll:rollback 100000
+✔ This will remove all records in LL database STARTING WITH & INCLUDING height 99959 which is the first block of the round 1887 and is irreversible. Are you sure? › (y/N)
+```
+
+## Logs
+Uses the core logger utility with (LL) prefix.<br>
+Use `pm2 logs solar-relay` or `less -R +F ~/.pm2/logs/solar-relay-out.log` to watch the logs in real time.<br>
+Use `grep "(LL)" ~/.pm2/logs/solar-relay-out.log` or `less -R ~/.pm2/logs/solar-relay-out.log` then less command `&(LL)` to filter for Lazy-Ledger output.
+
+## Accuracy checks
+Query the database[^4] for last block voters just after you forged a block with `solar ll:alloc`,
+
+then compare `balance|orgBalance`, `votePercent|orgVotePercent` and `vote|validVote` against api output at `https://tapi.solar.org/api/delegates/username/voters`, within the window of one forging cycle (or 1 block time if any of the protocol level funded wallets are voting for you). Note that `balance`, `votePercent` and `validVote` are effected by cap, blacklist and anti-bot.
+
+You are welcome to make any other accuracy checks by direct database query.
+
+## Version Info
+- Release 0.0.5 - requires `@solar-network/: ^4.1.0 || ^4.1.0-next.5`
 ## Roadmap
+Not necessarily in this order;
 
-- [ ] Voter dashboard
+- [ ] Web|console dashboard
+- [ ] Telegram|Discord integration
+- [ ] Database backup
+- [ ] Transaction memo customization
+- [ ] Payment periods > 24h
 
 See the [open issues](https://github.com/osrn/lazy-ledger/issues) for a full list of proposed features (and known issues).
 
 ## Contributing
 
-If you have a suggestion that would make this better, please fork the repo and create a pull request. <br>
-
-1. Fork the Project
-2. Create your Feature Branch (`git checkout -b feat/AmazingFeature`)
-3. Commit your Changes (`git commit -m 'Added an AmazingFeature'`)
-4. Push to the Branch (`git push origin feat/AmazingFeature`)
-5. Open a Pull Request
-
-You can also simply open an issue with the tag "enhancement".<br>
-
-Any contributions you make are **greatly appreciated**.
+If you have a suggestion for improvement open an issue with the tag "enhancement" or fork & create a pull request. Any contributions are **greatly appreciated**. <br>
 
 ## Credits
 
@@ -169,8 +326,8 @@ Any contributions you make are **greatly appreciated**.
 
 ## Acknowledgments
 
-* [Alessiodf](https://github.com/alessiodf/) Solar Core Developer, aka Gym, for the help and guidance navigating the Core maze
-* [Galperins4](https://github.com/galperins4/) Solar Delegate, aka Goose, for all the concepts in his TBW scripts
+* [Alessiodf](https://github.com/alessiodf/) Solar Core Developer, aka Gym, for his help and guidance, especially navigating the Solar Core maze and his insights on inner working principles
+* [Galperins4](https://github.com/galperins4/) Solar Delegate, aka Goose, for many concepts and ideas initially developed in his TBW scripts
 
 ## License
 

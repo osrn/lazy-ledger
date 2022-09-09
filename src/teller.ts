@@ -75,9 +75,9 @@ export class Teller{
             // Day of Month: 1-31
             // Months: 0-11 (Jan-Dec)
             // Day of Week: 0-6 (Sun-Sat)
-            //this.cronStmt = "0 0/2 * * * *"; // Temp cron every 2 minutes for testing independent of the configured plan
+            //this.cronStmt = "0 0/2 * * * *"; // Temp cron every 2 minutes for testing with instead of the configured plan
             this.cronStmt = plan.payperiod <= 24 ? `0 ${plan.guardtime} ${plan.payoffset}/${plan.payperiod} * * *` 
-                                                : `0 ${plan.guardtime} ${plan.payoffset} ${cronStartDay}/${plan.payperiod} * *`;
+                                                 : `0 ${plan.guardtime} ${plan.payoffset} ${cronStartDay}/${plan.payperiod} * *`;
 
             this.cronJob = new CronJob(this.cronStmt, this.getBill, null, true, undefined, this, undefined, 0);
 
@@ -95,6 +95,7 @@ export class Teller{
 
     public instantPay(): void {
         if (!this.active) {
+            this.logger.debug(`(LL) Post-init instant payment request granted.`);
             this.getBill();
         }
     }
@@ -165,8 +166,8 @@ export class Teller{
                 }
                 const fe = chunk[0]; //first entry
                 const msg = this.configHelper.getConfig().mergeAddrsInTx 
-                    ? "osrn reward sharing"
-                    : `osrn rewards for ${fe.y}-${fe.m}-${fe.d}-${fe.q}/${24/plan.payperiod}`;
+                    ? `${this.configHelper.getConfig().delegate} reward sharing`
+                    : `${this.configHelper.getConfig().delegate} rewards for ${fe.y}-${fe.m}-${fe.d}-${fe.q}/${24/plan.payperiod}`;
 
                 // pass to paybill
                 const txid = await this.payBill(chunk, msg);
@@ -209,7 +210,7 @@ export class Teller{
         // TODO: Find a method to get pool's wallet state to check sufficient funds and get nonce.
         // const internalType = Transactions.InternalTransactionType.from(CoreTransactionType.Transfer, TransactionTypeGroup.Core);
         // const handler: Handlers.TransactionHandler = await this.handlerRegistry.getActivatedHandlerByType(internalType);
-        // stuck here
+        // ...
 
         const config = this.configHelper.getConfig();
         const plan = this.configHelper.getPresentPlan(); 
@@ -228,7 +229,7 @@ export class Teller{
             .nonce(nonce.toFixed())
             .fee(dynfee.toFixed());
 
-        console.log("(LL) incoming pay order:", payments);
+        this.logger.debug(`(LL) incoming pay order: ${JSON.stringify(payments,null,4)}`);
         let txTotal: Utils.BigNumber = Utils.BigNumber.ZERO;
         let feeDeducted: boolean = false;
         for (const p of payments) {
@@ -247,15 +248,6 @@ export class Teller{
             transaction.secondSign(config.secondpass);
         }
         
-        // Following method is abundened as deducting the fee is more complicated
-        // const dynfee = this.getMinimumFee(transaction.build());
-        // looks redundant but the transaction needs to be signed again after changing fee property.
-        // transaction.fee(dynfee.toFixed());
-        // transaction.sign(config.passphrase);
-        // if (config.secondpass) {
-        //     transaction.secondSign(config.secondpass);
-        // }
-
         const struct = transaction.getStruct();
 
         this.logger.debug(`(LL) Passing transaction to Pool Processor | ${JSON.stringify(struct)}`);
@@ -342,7 +334,8 @@ export class Teller{
             object_array.reduce((acc, curr) => {
                 const group = group_by_keys.map(k => curr[k]).join('-');
                 acc[group] = acc[group] || Object.fromEntries(group_by_keys.map(k => [k, curr[k]]).concat(sum_keys.map(k => [k, 0])));
-                sum_keys.forEach(k => acc[group][k] += curr[k]);
+                // sum_keys.forEach(k => acc[group][k] += curr[k]);
+                sum_keys.forEach(k => acc[group][k] = Utils.BigNumber.make(acc[group][k]).plus(curr[k]));
                 return acc;
             }, {})
         );

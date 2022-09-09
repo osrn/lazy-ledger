@@ -1,44 +1,60 @@
-import { Managers } from "@solar-network/crypto";
+import { Constants, Managers, Utils } from "@solar-network/crypto";
 import { Container, Contracts } from "@solar-network/kernel";
 import SQLite3 from "better-sqlite3";
-import { IAllocation, IBill, IForgedBlock } from "./interfaces";
+import { IAllocation, IBill, IForgedBlock, PayeeTypes } from "./interfaces";
 
 export const databaseSymbol = Symbol.for("LazyLedger<Database>");
 
 @Container.injectable()
 export class Database {
-    @Container.inject(Container.Identifiers.LogService)
+    @Container.inject(Container.Identifiers.LogService) 
     private readonly logger!: Contracts.Kernel.Logger;
 
-    private readonly database: SQLite3.Database = new SQLite3(
-        `${process.env.CORE_PATH_DATA}/lazy-ledger.sqlite`,
-    );
+    private database!: SQLite3.Database;
 
+    public init(dataPath?: string) {
+        dataPath ||= process.env.CORE_PATH_DATA;
+        const dbfile = "lazy-ledger.sqlite";
+        if (this.logger) 
+            this.logger.debug(`(LL) Opening database connection @ ${dataPath}/${dbfile}`);
+        else
+            console.log(`(LL) Opening database connection @ ${dataPath}/${dbfile}`);
+        this.database = new SQLite3(`${dataPath}/${dbfile}`);
+    }
+    
     public async boot(): Promise<void> {
+        this.init();
+        //NOTE: SQLITE fields data type definitions are just documentation
+        const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         this.database.exec(`
             PRAGMA journal_mode=WAL;
-            CREATE TABLE IF NOT EXISTS forged_blocks (round INTEGER NOT NULL, height INTEGER NOT NULL PRIMARY KEY, timestamp NUMERIC NOT NULL, delegate TEXT NOT NULL, reward TEXT NOT NULL, devfund TEXT NOT NULL, fees TEXT NOT NULL, burnedFees TEXT NOT NULL, votes TEXT, validVotes TEXT, voterCount INTEGER) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS forged_blocks (round INTEGER NOT NULL, height INTEGER NOT NULL PRIMARY KEY, timestamp NUMERIC NOT NULL, delegate TEXT NOT NULL, reward TEXT NOT NULL, solfunds TEXT NOT NULL, fees TEXT NOT NULL, burnedFees TEXT NOT NULL, votes TEXT, validVotes TEXT, orgValidVotes TEXT, voterCount INTEGER) WITHOUT ROWID;
             CREATE TABLE IF NOT EXISTS missed_blocks (round INTEGER NOT NULL, height INTEGER NOT NULL, delegate TEXT NOT NULL, timestamp NUMERIC PRIMARY KEY NOT NULL) WITHOUT ROWID;
-            CREATE TABLE IF NOT EXISTS allocations (height INTEGER NOT NULL, address TEXT NOT NULL, payeeType INTEGER NOT NULL, vote TEXT NOT NULL, validVote TEXT NOT NULL, shareRatio INTEGER, allotment TEXT, booked NUMERIC, transactionId TEXT, settled NUMERIC, PRIMARY KEY (height, address, payeeType)) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS allocations (height INTEGER NOT NULL, address TEXT NOT NULL, payeeType INTEGER NOT NULL, balance TEXT NOT NULL, orgBalance TEXT NOT NULL, votePercent INTEGER NOT NULL, orgVotePercent INTEGER NOT NULL, validVote TEXT NOT NULL, shareRatio INTEGER, allotment TEXT, booked NUMERIC, transactionId TEXT, settled NUMERIC, PRIMARY KEY (height, address, payeeType)) WITHOUT ROWID;
             CREATE VIEW IF NOT EXISTS missed_rounds AS SELECT missed_blocks.* FROM missed_blocks LEFT OUTER JOIN forged_blocks ON missed_blocks.delegate = forged_blocks.delegate AND missed_blocks.round = forged_blocks.round WHERE forged_blocks.delegate IS NULL;
-            CREATE VIEW IF NOT EXISTS forged_blocks_human AS
-            SELECT round, height, strftime('%Y%m%d-%H%M%S', timestamp+1647453600, 'unixepoch') AS forgedTime, 
-                reward, devfund, fees, burnedFees, 
-                (reward - devfund)/100000000.0 AS earnedRewards, 
-                (fees - burnedFees)/100000000.0 AS earnedFees, 
-                (reward - devfund + fees - burnedFees)/100000000.0 AS netReward, 
-                voterCount AS voters, votes/100000000.0 AS votes, validVotes/100000000.0 AS validVotes 
-            FROM forged_blocks;
-            CREATE VIEW IF NOT EXISTS allocated_human AS
-            SELECT height, address, payeeType, vote/100000000.0 AS vote, validVote/100000000.0 AS validVote, 
-                shareRatio, allotment/100000000.0 AS allotment, strftime('%Y%m%d-%H%M%S', booked, 'unixepoch') AS bookedTime,
-                transactionId, CASE WHEN settled = 0 THEN 0 ELSE strftime('%Y%m%d-%H%M%S', settled , 'unixepoch') END AS settledTime
-            FROM allocations ORDER BY height DESC;
-            CREATE VIEW IF NOT EXISTS the_ledger AS
-            SELECT b.round, a.height, b.forgedTime, b.reward, b.earnedRewards, b.earnedFees, b.netReward, 
-            b.validVotes, a.address, a.payeeType, a.validVote, a.shareRatio, a.allotment, a.bookedTime, a.transactionId, a.settledTime 
-            FROM allocated_human a LEFT JOIN forged_blocks_human b ON a.height = b.height;
-            
+            DROP VIEW IF EXISTS forged_blocks_human;
+            CREATE VIEW forged_blocks_human AS
+                SELECT round, height, strftime('%Y%m%d-%H%M%S', timestamp+${t0}, 'unixepoch') AS forgedTime, 
+                    reward/${Constants.SATOSHI}.0 as reward, solfunds/${Constants.SATOSHI}.0 as solfunds, fees/${Constants.SATOSHI}.0 as fees, burnedFees/${Constants.SATOSHI}.0 as burnedFees, 
+                    (reward - solfunds)/${Constants.SATOSHI}.0 AS earnedRewards, 
+                    (fees - burnedFees)/${Constants.SATOSHI}.0 AS earnedFees, 
+                    (reward - solfunds + fees - burnedFees)/${Constants.SATOSHI}.0 AS netReward, 
+                    voterCount AS voters, votes/${Constants.SATOSHI}.0 AS votes, validVotes/${Constants.SATOSHI}.0 AS validVotes 
+                FROM forged_blocks;
+            DROP VIEW IF EXISTS allocated_human;
+            CREATE VIEW allocated_human AS
+                SELECT height, address, payeeType, balance/${Constants.SATOSHI}.0 AS balance, votePercent, 
+                    balance * votePercent / 100 / ${Constants.SATOSHI}.0 as vote, validVote/${Constants.SATOSHI}.0 AS validVote, 
+                    shareRatio, allotment/${Constants.SATOSHI}.0 AS allotment, strftime('%Y%m%d-%H%M%S', booked, 'unixepoch') AS bookedTime, 
+                    transactionId, CASE WHEN settled = 0 THEN 0 ELSE strftime('%Y%m%d-%H%M%S', settled , 'unixepoch') END AS settledTime, 
+                    orgBalance/${Constants.SATOSHI}.0 AS orgBalance, orgVotePercent
+                FROM allocations ORDER BY height DESC;
+            DROP VIEW IF EXISTS the_ledger;
+            CREATE VIEW the_ledger AS
+                SELECT b.round, a.height, b.forgedTime, b.reward, b.earnedRewards, b.earnedFees, b.netReward, 
+                    b.validVotes, a.address, a.payeeType, a.balance, a.votePercent, a.vote, a.validVote, 
+                    a.shareRatio, a.allotment, a.bookedTime, a.transactionId, a.settledTime, a.orgBalance, a.orgVotePercent 
+                FROM allocated_human a LEFT JOIN forged_blocks_human b ON a.height = b.height;
             CREATE INDEX IF NOT EXISTS forged_blocks_delegate_timestamp ON forged_blocks (delegate, timestamp);
             CREATE INDEX IF NOT EXISTS forged_blocks_delegate_round on forged_blocks (delegate, round);
             CREATE INDEX IF NOT EXISTS missed_blocks_delegate on missed_blocks (delegate);
@@ -60,6 +76,7 @@ export class Database {
             .prepare("SELECT height FROM forged_blocks ORDER BY height DESC LIMIT 1")
             .pluck()
             .get();
+
         return response || 0;
     }
 
@@ -67,8 +84,45 @@ export class Database {
         const response = this.database
             .prepare("SELECT * FROM forged_blocks ORDER BY height DESC LIMIT 1")
             .get();
+
+        response.reward = Utils.BigNumber.make(response.reward);
+        response.solfunds = Utils.BigNumber.make(response.solfunds);
+        response.fees = Utils.BigNumber.make(response.fees);
+        response.burnedFees = Utils.BigNumber.make(response.burnedFees);
+        response.votes = Utils.BigNumber.make(response.votes);
+        response.validVotes = Utils.BigNumber.make(response.validVotes);
+        response.orgValidVotes = Utils.BigNumber.make(response.orgValidVotes);
+        return response;
+    }
+
+    public getVoterAllocationAtHeight(height: number = 0): IAllocation[] {
+        const result = this.database
+            .prepare(`SELECT * FROM allocations WHERE height=${height ? height : "(SELECT MAX(height) FROM allocations)"} AND payeeType=${PayeeTypes.voter}`)
+            .all();
         
-        return response ? response[0] : {};
+        (result as unknown as IAllocation[]).forEach(r => { 
+            r.balance = Utils.BigNumber.make(r.balance);
+            r.orgBalance = Utils.BigNumber.make(r.orgBalance);
+            r.allotment = Utils.BigNumber.make(r.allotment);
+            r.validVote = Utils.BigNumber.make(r.validVote);
+        });
+        return result;
+    }
+
+    public getLedgerAtHeight(height: number = 0): Object[] {
+        const result = this.database
+            .prepare(`SELECT * FROM the_ledger WHERE height=${height ? height : "(SELECT MAX(height) FROM forged_blocks)"}`)
+            .all();
+        
+        return result;
+    }
+
+    public getLedgerAtRound(round: number = 0): Object[] {
+        const result = this.database
+            .prepare(`SELECT * FROM the_ledger WHERE round=${round ? round : "(SELECT MAX(round) FROM forged_blocks)"}`)
+            .all();
+        
+        return result;
     }
 
     public getLastPayAttempt(): IForgedBlock {
@@ -76,15 +130,76 @@ export class Database {
             .prepare("SELECT * FROM allocations a WHERE transactionId IS NOT '' ORDER BY height DESC LIMIT 1")
             .get();
         
-        return response ? response[0] : {};
+        return response;
     }
 
-    public getLastPaid(): IForgedBlock {
-        const response = this.database
-            .prepare("SELECT * FROM allocations a WHERE settled > 0 ORDER BY height DESC LIMIT 1")
+    public getLastPaidSummary(): { round: number; height: number; transactionId: string, settledTime: string } {
+        const result = this.database
+            .prepare(`SELECT round, height, transactionId, settledTime FROM the_ledger WHERE round = (SELECT MAX(round) FROM the_ledger WHERE settledTime != 0) ORDER BY settledTime DESC LIMIT 1`)
             .get();
+        
+        return result;
+    }
 
-        return response ? response[0] : {};
+    public getLastPaidVoterAllocation(): any {
+        const result = this.database
+            .prepare(`SELECT * FROM the_ledger WHERE round = (SELECT MAX(round) FROM the_ledger WHERE settledTime > 0)`)
+            .all();
+        
+        return result;
+    }
+
+    // First of, last of and number of forged blocks between two dates,
+    public getRangeBounds(start: number, end: number): { forgedBlock: number; firstForged: number, lastForged:number } {
+        const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
+        const result = this.database.prepare(
+           `SELECT COUNT(height) as forgedBlock, MIN(height) as firstForged, MAX(height) as lastForged FROM forged_blocks fb 
+            WHERE (${t0} + fb."timestamp") >= ${start}
+              AND (${t0} + fb."timestamp") < ${end}`)
+        .get();
+        
+        return result;
+    }
+
+    public getVoterCommitment(start: number, end: number): any {
+        const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
+        const result = this.database.prepare(
+           `SELECT COUNT(fb.round) AS roundCount, COUNT(al.height) AS blockCount, al.address, SUM(al.validVote <= al.nextVote) AS continuousVotes 
+            FROM forged_blocks fb INNER JOIN (
+                SELECT height, address, validVote, lead(validVote,1,0) OVER (PARTITION BY address ORDER BY height) as nextVote
+                FROM allocations
+                WHERE payeeType = 1
+                AND votePercent > 0
+            ) AS al 
+            ON fb.height = al.height
+            WHERE (${t0} + fb."timestamp") >= ${start}
+              AND (${t0} + fb."timestamp") < ${end}
+            GROUP BY al.address`)
+        .all();
+        
+        return result;
+    }
+
+    public getCommittedVoterAddresses(start: number, end: number): { address: string } [] {
+        const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
+        const result = this.database.prepare(
+           `SELECT address FROM (
+                SELECT COUNT(fb.round) AS roundCount, COUNT(al.height) AS blockCount, al.address, SUM(al.validVote <= al.nextVote) AS continuousVotes 
+                FROM forged_blocks fb INNER JOIN (
+                    SELECT height, address, validVote, lead(validVote,1,0) OVER (PARTITION BY address ORDER BY height) as nextVote
+                    FROM allocations
+                    WHERE payeeType = 1
+                    AND votePercent > 0
+                ) AS al 
+                ON fb.height = al.height
+                WHERE (${t0} + fb."timestamp") >= ${start}
+                AND (${t0} + fb."timestamp") < ${end}
+                GROUP BY al.address
+            ) AS vs 
+            WHERE continuousVotes = blockCount`)
+        .all();
+        
+        return result;
     }
 
     public getMissed(type: string, username: string, height: number): { height: number; timestamp: number }[] {
@@ -158,8 +273,7 @@ export class Database {
 
     public getUnsettledAllocations(): string[] {
         const result = this.database
-            .prepare(`SELECT DISTINCT transactionId FROM allocations a 
-            WHERE transactionId != '' AND settled = 0`)
+            .prepare(`SELECT DISTINCT transactionId FROM allocations a WHERE transactionId != '' AND settled = 0`)
             .all();
         return result.map( (r) => r.transactionId )
     }
@@ -222,6 +336,45 @@ export class Database {
         return result;
     }
 
+    public updateValidVote(allocations: IAllocation[]): void {
+        const updateAllocated: SQLite3.Statement<any[]> = this.database.prepare(
+           `UPDATE allocations 
+            SET balance = :balance,
+                votePercent = :votePercent,
+                validVote = :validVote, 
+                allotment = :allotment
+            WHERE allocations.height = :height
+                AND address = :address
+                AND payeeType = :payeeType
+                AND transactionId = ''`,
+        );
+        const updateForged: SQLite3.Statement<any[]> = this.database.prepare(
+            `UPDATE forged_blocks SET validVotes = :validVotes WHERE height = :height`,
+        );
+ 
+         //console.log(`(LL) query to run:\n ${sqlstr}`);
+        try {
+            this.database.transaction(() => {
+                for (const alloc of allocations) {
+                    updateAllocated.run({
+                        height: alloc.height,
+                        address: alloc.address,
+                        payeeType: alloc.payeeType,
+                        balance: alloc.balance.toFixed(),
+                        votePercent: alloc.votePercent,
+                        validVote: alloc.validVote.toFixed(),
+                        allotment: alloc.allotment.toFixed()
+                    });
+                }
+                const validVotes: Utils.BigNumber = allocations.map( o => o.validVote).reduce((prev, curr) => prev.plus(curr), Utils.BigNumber.ZERO);
+                updateForged.run({ height: allocations[0].height, validVotes: validVotes.toFixed() });
+            })();
+        } catch (error) {
+            this.logger.error("(LL) Error updating last vote allocations");
+            this.logger.error(error.message);
+        }
+    }
+
     public insert(
         forgedBlocks: IForgedBlock[],
         missedBlocks: { round: number; height: number; delegate: string; timestamp: number }[],
@@ -229,13 +382,13 @@ export class Database {
     ): void {
         // console.log(`(LL) allocations:\n ${JSON.stringify(allocations)}`);
         const insertForged: SQLite3.Statement<any[]> = this.database.prepare(
-            "INSERT INTO forged_blocks VALUES (:round, :height, :timestamp, :delegate, :reward, :devfund, :fees, :burnedFees, :votes, :validVotes, :voterCount)",
+            "INSERT INTO forged_blocks VALUES (:round, :height, :timestamp, :delegate, :reward, :solfunds, :fees, :burnedFees, :votes, :validVotes, :orgValidVotes, :voterCount)",
         );
         const insertMissed: SQLite3.Statement<any[]> = this.database.prepare(
             "INSERT INTO missed_blocks VALUES (:round, :height, :delegate, :timestamp)",
         );
         const insertAllocated: SQLite3.Statement<any[]> = this.database.prepare(
-            "INSERT INTO allocations VALUES (:height, :address, :payeeType, :vote, :validVote, :shareRatio, :allotment, :booked, :transactionId, :settled)",
+            "INSERT INTO allocations VALUES (:height, :address, :payeeType, :balance, :orgBalance, :votePercent, :orgVotePercent, :validVote, :shareRatio, :allotment, :booked, :transactionId, :settled)",
         );
         const deleteForged: SQLite3.Statement<any[]> = this.database.prepare(
             "DELETE FROM forged_blocks WHERE height >= :height OR timestamp >= :timestamp",
@@ -262,11 +415,12 @@ export class Database {
                         timestamp: block.timestamp,
                         delegate: block.delegate,
                         reward: block.reward.toFixed(),
-                        devfund: block.devfund.toFixed(),
+                        solfunds: block.solfunds.toFixed(),
                         fees: block.fees.toFixed(),
                         burnedFees: block.burnedFees.toFixed(),
                         votes: block.votes.toFixed(),
                         validVotes: block.validVotes.toFixed(),
+                        orgValidVotes: block.orgValidVotes.toFixed(),
                         voterCount: block.voterCount              
                     });
                 }
@@ -278,7 +432,10 @@ export class Database {
                         height: alloc.height,
                         address: alloc.address,
                         payeeType: alloc.payeeType,
-                        vote: alloc.vote.toFixed(),
+                        balance: alloc.balance.toFixed(),
+                        orgBalance: alloc.orgBalance.toFixed(),
+                        votePercent: alloc.votePercent,
+                        orgVotePercent: alloc.orgVotePercent,
                         validVote: alloc.validVote.toFixed(),
                         shareRatio: alloc.shareRatio,
                         allotment: alloc.allotment.toFixed(),
@@ -311,15 +468,15 @@ export class Database {
         })();
     }
 
-    public truncate(): void {
+    public rollback(height: number): void {
         this.triggers(false);
-        const truncateForged: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM forged_blocks");
-        const truncateMissed: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM missed_blocks");
-        const truncateAllocated: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM allocations");
+        const truncateForged: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM forged_blocks WHERE height >= :height");
+        const truncateMissed: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM missed_blocks WHERE height >= :height");
+        const truncateAllocated: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM allocations WHERE height >= :height");
         this.database.transaction(() => {
-            truncateForged.run();
-            truncateMissed.run();
-            truncateAllocated.run();
+            truncateForged.run({height});
+            truncateMissed.run({height});
+            truncateAllocated.run({height});
         })();
         this.triggers(true);
     }

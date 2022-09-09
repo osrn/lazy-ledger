@@ -9,12 +9,6 @@ export class ServiceProvider extends Providers.ServiceProvider {
     @Container.inject(Container.Identifiers.LogService)
     private readonly logger!: Contracts.Kernel.Logger;
 
-    // Get unique primitives
-    // private configHelperSymbol = Symbol.for("LazyLedger<ConfigHelper>");
-    // private databaseSymbol = Symbol.for("LazyLedger<Database>");
-    // private processorSymbol = Symbol.for("LazyLedger<Processor>");
-    // private tellerSymbol = Symbol.for("LazyLedger<Teller>");
-
     public async register(): Promise<void> {
         //this.app.bind<Controller>(this.controllerSymbol).to(Controller).inSingletonScope();
         this.app.bind<ConfigHelper>(configHelperSymbol).to(ConfigHelper).inSingletonScope();

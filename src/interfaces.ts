@@ -13,6 +13,8 @@ export interface IConfig extends Record<string, any> {
     shareEarnedFees: boolean;   // include earned transaction fees (=unburned 10%) in reserve, voter and donee allocations
     reserveGetsFees: boolean;   // when earned fees are not shared, allocate transaction fees to the first reserve address | stays in delegate wallet otherwise)
     postInitInstantPay: boolean;// make a payment run immediately after plugin starts following initial sync
+    antibot: boolean;           // anti-bot processing active if true
+    whitelist: string[];        // addresses exempt from anti-bot processing (delegate address is automatically whitelisted)
     delegateWallet?: Contracts.State.Wallet; // for internal use
     delegateAddress?: string;   // for internal use
     delegatePublicKey?: string; // for internal use
@@ -44,11 +46,12 @@ export interface IForgedBlock {
     timestamp: number; 
     delegate: string; 
     reward: Utils.BigNumber;
-    devfund: Utils.BigNumber;
+    solfunds: Utils.BigNumber;
     fees: Utils.BigNumber;
     burnedFees: Utils.BigNumber;
     votes: Utils.BigNumber;
     validVotes: Utils.BigNumber;
+    orgValidVotes: Utils.BigNumber;
     voterCount: number;
 }
 
@@ -63,8 +66,11 @@ export interface IAllocation {
     height: number;                 // allocation for block height
     address: string;                // payee wallet address
     payeeType: PayeeTypes;          // payee type
-    vote: Utils.BigNumber;          // balance voting for delegate. 0 if reserve|donee
-    validVote: Utils.BigNumber;     // effective voting balance. 0 if reserve|donee
+    balance: Utils.BigNumber;       // wallet balance. 0 if reserve|donee
+    orgBalance: Utils.BigNumber;    // original wallet balance before antibot. 0 if reserve|donee
+    votePercent: number;            // percent voting for delegate. 0 if reserve|donee
+    orgVotePercent: number;         // original percent voting for delegate before antibot. 0 if reserve|donee
+    validVote: Utils.BigNumber;     // effective voting balance after mincap|maxcap|blacklist|antibot. 0 if reserve|donee
     shareRatio: number;             // reward share percentage at block height
     allotment: Utils.BigNumber;     // reward amount allocated
     booked: number;                 // unix timestamp the allocation done
