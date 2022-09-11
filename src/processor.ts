@@ -395,8 +395,10 @@ export class Processor {
                     vote: vote,
                     validVote: validVote
                 });
-                if (this.isInitialSync()) {
-                    this.logger.debug(`(LL) ${voterIndex} of ${voter_roll.length} voters processed in ${this.msToHuman(Date.now() - tick0)}`)
+                // Voter processing times will be the longest first time a voter is processed as transaction will be fetched from the very beginning.
+                // Log the progress to ease the observer's mind
+                if (startFrom == 0) {
+                    this.logger.debug(`(LL) Voter ${voterIndex} / ${voter_roll.length} processed in ${this.msToHuman(Date.now() - tick0)}`)
                 }
                 voterIndex++;
             }
@@ -487,6 +489,7 @@ export class Processor {
                 this.logger.debug(`(LL) block processed in ${this.msToHuman(Date.now() - tick0)}`)
             }
             this.sqlite.insert(forgedBlocks, missedBlocks, allocations);
+            this.lastStoredBlockHeight = block.height;
         }
         //this.lastVoterAllocation = [...allocations].filter( a => a.payeeType === PayeeTypes.voter);
         this.logger.debug(`(LL) Completed processing batch of ${blocks.length} blocks in ${this.msToHuman(Date.now() - tick0)}`);
@@ -526,7 +529,6 @@ export class Processor {
                     true);
 
                 if (blocks.length) { //actually redundant when lastStoredBlockHeight < lastChainedBlockHeight
-                    this.lastStoredBlockHeight = blocks[blocks.length -1].height;
                     const delegatesBlocks = blocks.filter((block) => block.generatorPublicKey === this.configHelper.getConfig().delegatePublicKey);
 
                     if (delegatesBlocks.length) {
@@ -564,6 +566,6 @@ export class Processor {
         sec = sec % 60;
         min = min % 60;
         
-        return `${hr}h:${this.padToNDigits(min,2)}':${this.padToNDigits(sec,2)}".${this.padToNDigits(ms,3)}ms`;
+        return `${hr}h ${this.padToNDigits(min,2)}' ${this.padToNDigits(sec,2)}" ${this.padToNDigits(ms,3)}ms`;
     }
 }

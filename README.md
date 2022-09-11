@@ -46,8 +46,9 @@ or
 cd ~/solar-core/plugins
 git clone https://github.com/osrn/lazy-ledger
 cd lazy-ledger
-pnpm install && pnpm build
-cd ~/.local/share/solar-core/testnet/plugins/
+CFLAGS="$CFLAGS" CPATH="$CPATH" LDFLAGS="$LDFLAGS" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" pnpm install
+pnpm build
+cd ~/.local/share/solar-core/{mainnet|testnet}/plugins/
 mkdir '@osrn' && cd '@osrn'
 ln -s ~/solar-core/plugins/lazy-ledger lazy-ledger
 ```
