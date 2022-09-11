@@ -343,15 +343,17 @@ export class Processor {
     }
 
     private async processBlocks(blocks): Promise<void> {
-        const forgedBlocks: IForgedBlock[] = [];
-        const missedBlocks: IMissedBlock[] = [];
-        const allocations: IAllocation[] = [];
-
+        const tick0 = Date.now();
         const blockarray: Interfaces.IBlockData[] = blocks as Interfaces.IBlockData[];
         const blockheights = blockarray.map((block) => block.height);
         this.logger.debug(`(LL) Received batch of ${blocks.length} blocks to process | heights: ${blockheights.toString()}`);
-
+        
         for (let blockCounter = 0; blockCounter < blocks.length; blockCounter++) {
+            const forgedBlocks: IForgedBlock[] = [];
+            const missedBlocks: IMissedBlock[] = [];
+            const allocations: IAllocation[] = [];
+
+            const tick0 = Date.now();
             const block: Interfaces.IBlockData = blocks[blockCounter];
             // console.log(JSON.stringify(block,null,4));
             const round = AppUtils.roundCalculator.calculateRound(block.height);
@@ -363,9 +365,13 @@ export class Processor {
             this.logger.debug(`(LL) Processing block | round:${round.round } height:${block.height} timestamp:${block.timestamp} delegate: ${generator} reward:${block.reward} solfunds:${solfunds} block_fees:${block.totalFee} burned_fees:${block.burnedFee}`)
 
             const plan = this.configHelper.getPlan(block.height, block.timestamp);
+            const tick1 = Date.now();
             const voter_roll = await this.transactionRepository.getDelegateVotesByHeight(block.height, generator, block.generatorPublicKey);
-            const lastVoterAllocation: IAllocation[] = this.sqlite.getVoterAllocationAtHeight();
+            console.log(`(LL) voter_roll retrieved in ${Date.now() - tick1} ms`)
+            const lastVoterAllocation: IAllocation[] = this.sqlite.getAllVotersLastAllocation();
+            let voterIndex=1;
             for (const v of voter_roll) {
+                const tick0 = Date.now();
                 const walletAddress: string = this.walletRepository.findByPublicKey(v.publicKey).getAddress();
                 let startFrom: number = 0;
                 let prevBalance: Utils.BigNumber = Utils.BigNumber.ZERO;
@@ -389,6 +395,12 @@ export class Processor {
                     vote: vote,
                     validVote: validVote
                 });
+                // Voter processing times will be the longest first time a voter is processed as transaction will be fetched from the very beginning.
+                // Log the progress to ease the observer's mind
+                if (startFrom == 0) {
+                    this.logger.debug(`(LL) Voter ${voterIndex} / ${voter_roll.length} processed in ${this.msToHuman(Date.now() - tick0)}`)
+                }
+                voterIndex++;
             }
             //console.log(`(LL) voters\n${JSON.stringify(voters)}`);
             const votes: Utils.BigNumber = voters.map( o => o.vote).reduce((a, b) => a.plus(b), Utils.BigNumber.ZERO);
@@ -473,10 +485,14 @@ export class Processor {
                 });
             }
             //console.log(`(LL) allocations after voters\n${JSON.stringify(allocations)}`);
+            if (this.isInitialSync()) {
+                this.logger.debug(`(LL) block processed in ${this.msToHuman(Date.now() - tick0)}`)
+            }
+            this.sqlite.insert(forgedBlocks, missedBlocks, allocations);
+            this.lastStoredBlockHeight = block.height;
         }
-        this.sqlite.insert(forgedBlocks, missedBlocks, allocations);
         //this.lastVoterAllocation = [...allocations].filter( a => a.payeeType === PayeeTypes.voter);
-        this.logger.debug(`(LL) Completed processing batch of ${blocks.length} blocks`);
+        this.logger.debug(`(LL) Completed processing batch of ${blocks.length} blocks in ${this.msToHuman(Date.now() - tick0)}`);
     }
 
     private setInitialSync(state): void {
@@ -492,22 +508,27 @@ export class Processor {
             this.logger.debug(`(LL) Active sync &| block processing in effect. Skipping.`)
             return;
         }
-        this.logger.debug("(LL) Starting sync...")
         this.setSyncing(true);
+        this.logger.info(`(LL) Starting ${this.isInitialSync() ? "(initial|catch-up)" : ""} sync ...`);
+        const tick0 = Date.now();
         let loop: boolean = true;
         while (loop) {
-            const lastStoredBlockHeight: number = this.sqlite.getHeight();
             const lastChainedBlockHeight: number = await this.getLastBlockHeight();
             const lastForgedBlockHeight: number = await this.getLastForgedBlockHeight();
+            const ourEpoch = this.configHelper.getFirstAllocatingPlan()?.height || 0; // NOTE TO SELF: must be run after async calls above
 
-            if (lastStoredBlockHeight < lastForgedBlockHeight && this.lastStoredBlockHeight < lastChainedBlockHeight) {
+            // if initial sync, ignore all blocks until the height allocations starts
+            const lastStoredBlockHeight: number = this.sqlite.getHeight() || (ourEpoch < lastChainedBlockHeight ? ourEpoch : lastChainedBlockHeight);
+
+            // NOTE TO SELF: lastStoredBlockHeight checks if we are lagging. 
+            // this.lastStoredBlockHeight check is for if network rolled-back since we last fetched from block repository
+            if (lastStoredBlockHeight < lastForgedBlockHeight && this.lastStoredBlockHeight < lastChainedBlockHeight) { 
                 const blocks: Contracts.Shared.DownloadBlock[] = await this.database.getBlocksForDownload(
-                    this.lastStoredBlockHeight + 1,
+                    lastStoredBlockHeight + 1,
                     10000,
                     true);
 
                 if (blocks.length) { //actually redundant when lastStoredBlockHeight < lastChainedBlockHeight
-                    this.lastStoredBlockHeight = blocks[blocks.length -1].height;
                     const delegatesBlocks = blocks.filter((block) => block.generatorPublicKey === this.configHelper.getConfig().delegatePublicKey);
 
                     if (delegatesBlocks.length) {
@@ -524,10 +545,27 @@ export class Processor {
                 loop = false;
                 this.logger.debug(`(LL) Sync complete | lastChainedBlockHeight:${lastChainedBlockHeight} lastForgedBlockHeight:${lastForgedBlockHeight} lastStoredBlockHeight:${lastStoredBlockHeight}\n`)
                 if (this.isInitialSync() && lastStoredBlockHeight === lastForgedBlockHeight) {
+                    this.logger.debug(`(LL) backlog processed in ${this.msToHuman(Date.now() - tick0)}`)
                     this.finishedInitialSync();
                 }
             }
         }
         this.setSyncing(false);
+    }
+
+    private padToNDigits(num: number, n: number): string {
+        return num.toString().padStart(n, '0');
+    }
+      
+    private msToHuman(ms: number): string {
+        let sec = Math.floor(ms / 1000);
+        let min = Math.floor(sec / 60);
+        let hr = Math.floor(min / 60);
+        
+        ms = ms % 1000;
+        sec = sec % 60;
+        min = min % 60;
+        
+        return `${hr}h ${this.padToNDigits(min,2)}' ${this.padToNDigits(sec,2)}" ${this.padToNDigits(ms,3)}ms`;
     }
 }

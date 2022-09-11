@@ -36,7 +36,7 @@ export class Command extends Commands.Command {
             console.log(sqlite.getLastPaidSummary());
         }
         else {
-            console.log(sqlite.getLastPaidVoterAllocation());
+            sqlite.getLastPaidVoterAllocation().forEach( item => console.log(item) );
         }
     }
 }

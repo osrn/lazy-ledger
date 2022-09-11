@@ -1,4 +1,4 @@
-import { Constants, Managers, Utils } from "@solar-network/crypto";
+import { Constants, Managers, Networks, Types, Utils } from "@solar-network/crypto";
 import { Container, Contracts } from "@solar-network/kernel";
 import SQLite3 from "better-sqlite3";
 import { IAllocation, IBill, IForgedBlock, PayeeTypes } from "./interfaces";
@@ -18,6 +18,7 @@ export class Database {
         if (this.logger) 
             this.logger.debug(`(LL) Opening database connection @ ${dataPath}/${dbfile}`);
         else
+            // no logger means called by a cli command
             console.log(`(LL) Opening database connection @ ${dataPath}/${dbfile}`);
         this.database = new SQLite3(`${dataPath}/${dbfile}`);
     }
@@ -109,6 +110,28 @@ export class Database {
         return result;
     }
 
+    public getAllVotersLastAllocation(height: number = 0): IAllocation[] {
+        const result = this.database
+            .prepare(`SELECT m.* FROM allocations m INNER JOIN (
+                SELECT address, MAX(height) as height from allocations
+                WHERE payeeType = 1
+                GROUP BY address
+            ) AS g
+            ON m.address = g.address
+            AND m.height = g.height
+            WHERE payeeType = 1
+            ORDER by m.height ASC`)
+            .all();
+        
+        (result as unknown as IAllocation[]).forEach(r => { 
+            r.balance = Utils.BigNumber.make(r.balance);
+            r.orgBalance = Utils.BigNumber.make(r.orgBalance);
+            r.allotment = Utils.BigNumber.make(r.allotment);
+            r.validVote = Utils.BigNumber.make(r.validVote);
+        });
+        return result;
+    }
+
     public getLedgerAtHeight(height: number = 0): Object[] {
         const result = this.database
             .prepare(`SELECT * FROM the_ledger WHERE height=${height ? height : "(SELECT MAX(height) FROM forged_blocks)"}`)
@@ -150,7 +173,10 @@ export class Database {
     }
 
     // First of, last of and number of forged blocks between two dates,
-    public getRangeBounds(start: number, end: number): { forgedBlock: number; firstForged: number, lastForged:number } {
+    public getRangeBounds(start: number, end: number, network?: Types.NetworkName): { forgedBlock: number; firstForged: number; lastForged:number } {
+        if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
+            Managers.configManager.setFromPreset(network!);
+        } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         const result = this.database.prepare(
            `SELECT COUNT(height) as forgedBlock, MIN(height) as firstForged, MAX(height) as lastForged FROM forged_blocks fb 
@@ -161,7 +187,10 @@ export class Database {
         return result;
     }
 
-    public getVoterCommitment(start: number, end: number): any {
+    public getVoterCommitment(start: number, end: number, network?: Types.NetworkName): any {
+        if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
+            Managers.configManager.setFromPreset(network!);
+        } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         const result = this.database.prepare(
            `SELECT COUNT(fb.round) AS roundCount, COUNT(al.height) AS blockCount, al.address, SUM(al.validVote <= al.nextVote) AS continuousVotes 
@@ -180,7 +209,10 @@ export class Database {
         return result;
     }
 
-    public getCommittedVoterAddresses(start: number, end: number): { address: string } [] {
+    public getCommittedVoterAddresses(start: number, end: number, network?: Types.NetworkName): { address: string } [] {
+        if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
+            Managers.configManager.setFromPreset(network!);
+        } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         const result = this.database.prepare(
            `SELECT address FROM (

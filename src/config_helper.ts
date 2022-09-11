@@ -122,6 +122,21 @@ export class ConfigHelper {
     }
 
     /**
+     * Used during initial sync to ignore blocks before allocation starts.
+     * @returns The first plan allocation starts
+     */
+    public getFirstAllocatingPlan(): IPlan | undefined {
+        // FIXME: Assumes the plan declares a height. If a timestamp were declared instead, the function should find the first block height forged past this timestamp
+        const plans = this.config.plans;
+        for (let i = 0; i < plans.length; i++) {
+            if (plans[i].share > 0 || plans[i].reserves[0]?.share > 0) {
+                return plans[i];
+            }
+        }
+        return undefined;
+    }
+
+    /**
      * Used by payment module to fetch last payment frequency and payment offset valid at the present time
      * Notice that, this will leak to previous plans outstanding payments if any.
      * Best option until the bill DB query updated to consider Plan specific payment frequency and offset.
