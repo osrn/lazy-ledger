@@ -155,7 +155,7 @@ export class Processor {
             else {
                 this.logger.critical(`(LL) Detected an unsettled allocation marked with an invalid tx ${txid}`);
                 //TODO: erase the TXid? or leave it to the delegate to inspect and manually delete
-                //TODO: should this check be run as a periodic job, rather than running at relay restart only? (hence erased TXid can be paid in next payment run)
+                //TODO: can be run as a periodic job, rather than running at relay restart only? (hence erased TXid can be paid in next payment run)
             }
         }
                 
@@ -228,7 +228,7 @@ export class Processor {
                     }
                     // Anti-bot: check for voter originated outbound transfers within 1 round following a forged block - only during real-time processing
                     // and reduce valid vote to the new wallet amount if voter wallet made an outbound transfer within the round
-                    // TODO: currently checking for transfer transaction only. voter can still game the system with an HTLC-lock then immediate claim to new wallet.
+                    // TODO: Cover other transaction methods.
                     else if (config.antibot && !this.isInitialSync()) {
                         while (this.isSyncing()) {
                             await delay(100);
@@ -540,7 +540,7 @@ export class Processor {
                     this.logger.debug(`(LL) Sync complete | lastChainedBlockHeight:${lastChainedBlockHeight} lastForgedBlockHeight:${lastForgedBlockHeight} lastStoredBlockHeight:${lastStoredBlockHeight}---`)
                 }
             }
-            // TODO: what if lastStored > lastForged ?
+            // TODO: lastStored > lastForged
             else {
                 loop = false;
                 this.logger.debug(`(LL) Sync complete | lastChainedBlockHeight:${lastChainedBlockHeight} lastForgedBlockHeight:${lastForgedBlockHeight} lastStoredBlockHeight:${lastStoredBlockHeight}---`)

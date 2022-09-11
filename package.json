@@ -27,12 +27,12 @@
         "joi": "17.6.0"
     },
     "devDependencies": {
-        "@solar-network/cli": "workspace: ^4.1.0 || ^4.1.0-next.5",
-        "@solar-network/core": "workspace: ^4.1.0 || ^4.1.0-next.5",
-        "@solar-network/crypto": "workspace: ^4.1.0 || ^4.1.0-next.5",
-        "@solar-network/database": "workspace: ^4.1.0 || ^4.1.0-next.5",
-        "@solar-network/kernel": "workspace: ^4.1.0 || ^4.1.0-next.5",
-        "@solar-network/transactions": "workspace: ^4.1.0 || ^4.1.0-next.5"
+        "@solar-network/cli": "workspace:*",
+        "@solar-network/core": "workspace:*",
+        "@solar-network/crypto": "workspace:*",
+        "@solar-network/database": "workspace:*",
+        "@solar-network/kernel": "workspace:*",
+        "@solar-network/transactions": "workspace:*"
     },
     "keywords": [
         "solar",
