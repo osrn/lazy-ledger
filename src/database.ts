@@ -18,6 +18,7 @@ export class Database {
         if (this.logger) 
             this.logger.debug(`(LL) Opening database connection @ ${dataPath}/${dbfile}`);
         else
+            // no logger means called by a cli command
             console.log(`(LL) Opening database connection @ ${dataPath}/${dbfile}`);
         this.database = new SQLite3(`${dataPath}/${dbfile}`);
     }
@@ -98,6 +99,28 @@ export class Database {
     public getVoterAllocationAtHeight(height: number = 0): IAllocation[] {
         const result = this.database
             .prepare(`SELECT * FROM allocations WHERE height=${height ? height : "(SELECT MAX(height) FROM allocations)"} AND payeeType=${PayeeTypes.voter}`)
+            .all();
+        
+        (result as unknown as IAllocation[]).forEach(r => { 
+            r.balance = Utils.BigNumber.make(r.balance);
+            r.orgBalance = Utils.BigNumber.make(r.orgBalance);
+            r.allotment = Utils.BigNumber.make(r.allotment);
+            r.validVote = Utils.BigNumber.make(r.validVote);
+        });
+        return result;
+    }
+
+    public getAllVotersLastAllocation(height: number = 0): IAllocation[] {
+        const result = this.database
+            .prepare(`SELECT m.* FROM allocations m INNER JOIN (
+                SELECT address, MAX(height) as height from allocations
+                WHERE payeeType = 1
+                GROUP BY address
+            ) AS g
+            ON m.address = g.address
+            AND m.height = g.height
+            WHERE payeeType = 1
+            ORDER by m.height ASC`)
             .all();
         
         (result as unknown as IAllocation[]).forEach(r => { 
