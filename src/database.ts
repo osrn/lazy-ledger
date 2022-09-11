@@ -1,4 +1,4 @@
-import { Constants, Managers, Utils } from "@solar-network/crypto";
+import { Constants, Managers, Networks, Types, Utils } from "@solar-network/crypto";
 import { Container, Contracts } from "@solar-network/kernel";
 import SQLite3 from "better-sqlite3";
 import { IAllocation, IBill, IForgedBlock, PayeeTypes } from "./interfaces";
@@ -173,7 +173,10 @@ export class Database {
     }
 
     // First of, last of and number of forged blocks between two dates,
-    public getRangeBounds(start: number, end: number): { forgedBlock: number; firstForged: number, lastForged:number } {
+    public getRangeBounds(start: number, end: number, network?: Types.NetworkName): { forgedBlock: number; firstForged: number; lastForged:number } {
+        if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
+            Managers.configManager.setFromPreset(network!);
+        } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         const result = this.database.prepare(
            `SELECT COUNT(height) as forgedBlock, MIN(height) as firstForged, MAX(height) as lastForged FROM forged_blocks fb 
@@ -184,7 +187,10 @@ export class Database {
         return result;
     }
 
-    public getVoterCommitment(start: number, end: number): any {
+    public getVoterCommitment(start: number, end: number, network?: Types.NetworkName): any {
+        if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
+            Managers.configManager.setFromPreset(network!);
+        } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         const result = this.database.prepare(
            `SELECT COUNT(fb.round) AS roundCount, COUNT(al.height) AS blockCount, al.address, SUM(al.validVote <= al.nextVote) AS continuousVotes 
@@ -203,7 +209,10 @@ export class Database {
         return result;
     }
 
-    public getCommittedVoterAddresses(start: number, end: number): { address: string } [] {
+    public getCommittedVoterAddresses(start: number, end: number, network?: Types.NetworkName): { address: string } [] {
+        if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
+            Managers.configManager.setFromPreset(network!);
+        } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         const result = this.database.prepare(
            `SELECT address FROM (

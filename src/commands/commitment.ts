@@ -33,24 +33,25 @@ export class Command extends Commands.Command {
         const endDate = this.getFlag("end");
         const start = Math.floor(new Date(startDate).getTime() / 1000);
         const end = Math.floor(new Date(endDate).getTime() / 1000);
+        const network = this.getFlag("network");
         if (end <= start) {
             this.components.error("End date must be later than start date");
             return;
         }
         const sqlite = new Database();
         sqlite.init(this.app.getCorePath("data"));
-        const range = sqlite.getRangeBounds(start, end);
+        const range = sqlite.getRangeBounds(start, end, network);
         this.components.log(`Range contains ${range.forgedBlock} blocks and bounds are:
 (date)     : [${startDate}, ${endDate})
 (unixstamp): [${start}, ${end})
 (height)   : [${range.firstForged}, ${range.lastForged}]\n`)
 
         this.components.log("voter commitment during the range is:")
-        console.log(sqlite.getVoterCommitment(start, end));
+        console.log(sqlite.getVoterCommitment(start, end, network));
         console.log();
 
         this.components.log(`Committed addresses during the range, and respective valid voting balances at the beginning of the range (height ${range.firstForged}) are:`);
-        const addresses = sqlite.getCommittedVoterAddresses(start, end).map( a => a.address);
+        const addresses = sqlite.getCommittedVoterAddresses(start, end, network).map( a => a.address);
         sqlite.getVoterAllocationAtHeight(range.firstForged)
               .filter( al => addresses.includes(al.address))
               .forEach( al => console.log(al.address, al.validVote.toFixed()));
