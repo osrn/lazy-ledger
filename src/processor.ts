@@ -257,9 +257,9 @@ export class Processor {
                                         vrecord.balance = Utils.BigNumber.ZERO;
                                     const vote = vrecord.balance.times(Math.round(vrecord.votePercent * 100)).div(10000);
                                     const plan = this.configHelper.getPlan(lastForgedBlock.height, lastForgedBlock.timestamp);
-                                    vrecord.validVote = vote.isLessThan(plan.mincap) || plan.blacklist.includes(vrecord.address) ? 
-                                        Utils.BigNumber.ZERO : (plan.maxcap && vote.isGreaterThan(plan.maxcap) ? Utils.BigNumber.make(plan.maxcap) : vote);
-                
+                                    vrecord.validVote = vote.isLessThan(plan.mincapSatoshi) || plan.blacklist.includes(vrecord.address) ? 
+                                        Utils.BigNumber.ZERO : (plan.maxcapSatoshi && vote.isGreaterThan(plan.maxcapSatoshi) ? plan.maxcapSatoshi : vote);
+
                                     // recalculate allotments for all voters with the new vote distribution
                                     const validVotes = lastVoterAllocation.map( o => o.validVote).reduce((prev, curr) => prev.plus(curr), Utils.BigNumber.ZERO);
                                     const earned_tx_fees = lastForgedBlock.fees.minus(lastForgedBlock.burnedFees);
@@ -310,8 +310,8 @@ export class Processor {
                                     vrecord.votePercent = votePercent; // reduce vote percent at forged block to the new value
                                     const vote = vrecord.balance.times(Math.round(vrecord.votePercent * 100)).div(10000);
                                     const plan = this.configHelper.getPlan(lastForgedBlock.height, lastForgedBlock.timestamp);
-                                    vrecord.validVote = vote.isLessThan(plan.mincap) || plan.blacklist.includes(vrecord.address) ? 
-                                        Utils.BigNumber.ZERO : (plan.maxcap && vote.isGreaterThan(plan.maxcap) ? Utils.BigNumber.make(plan.maxcap) : vote);
+                                    vrecord.validVote = vote.isLessThan(plan.mincapSatoshi) || plan.blacklist.includes(vrecord.address) ? 
+                                        Utils.BigNumber.ZERO : (plan.maxcapSatoshi && vote.isGreaterThan(plan.maxcapSatoshi) ? plan.maxcapSatoshi : vote);
                                     
                                     // recalculate allotments for all voters with the new vote distribution
                                     const validVotes = lastVoterAllocation.map( o => o.validVote).reduce((prev, curr) => prev.plus(curr), Utils.BigNumber.ZERO);
@@ -384,8 +384,8 @@ export class Processor {
                 }
                 const walletBalance = prevBalance.plus(await this.transactionRepository.getNetBalanceByHeightRange(startFrom, block.height, walletAddress, v.publicKey));
                 const vote = walletBalance.times(Math.round(v.percent * 100)).div(10000);
-                const validVote = vote.isLessThan(plan.mincap) || plan.blacklist.includes(walletAddress) ? 
-                    Utils.BigNumber.ZERO : (plan.maxcap && vote.isGreaterThan(plan.maxcap) ? Utils.BigNumber.make(plan.maxcap) : vote);
+                const validVote = vote.isLessThan(plan.mincapSatoshi) || plan.blacklist.includes(walletAddress) ? 
+                    Utils.BigNumber.ZERO : (plan.maxcapSatoshi && vote.isGreaterThan(plan.maxcapSatoshi) ? plan.maxcapSatoshi : vote);
 
                 voters.push({
                     height: block.height,

@@ -20,15 +20,15 @@ export interface IConfig extends Record<string, any> {
     delegatePublicKey?: string; // for internal use
 }
 
-export interface IPlan {
+export interface IPlan extends Record<string, any> {
     height?: number;
     timestamp?: number | string;// unix timestamp (not Solar epochStamp) | YYYY-MM-DDTHH:mm:ss.sssZ | YYYY-MM-DDTHH:mm:ss.sss+-hh:mm
     share: number;              // voter share ratio. 0-100, up to 2 decimal places
     reserves: Array<IPayee>;    // recipients for rewards kept
     donations: Array<IPayee>;   // recipients for donations
     // share + reserves[].share + donations[].share = 100 recommended but not enforced! by the plugin
-    mincap: number;             // minimum voter wallet balance eligible for rewards allocation
-    maxcap: number;             // maximum vote weight from an address
+    mincap: number;             // minimum voter wallet balance eligible for rewards allocation (SXP)
+    maxcap: number;             // maximum vote weight from an address (SXP)
     blacklist: string[];        // addresses blacklisted from rewards allocation
     payperiod: number;          // Payment cycle - every [0,1,2,3,4,6,8,12,24] hours. 0 if plugin should not handle payment.
     payoffset: number;          // 0-23. new cycle begins at UTC 00:00 + offset hrs.
