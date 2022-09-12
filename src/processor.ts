@@ -155,7 +155,7 @@ export class Processor {
             else {
                 this.logger.critical(`(LL) Detected an unsettled allocation marked with an invalid tx ${txid}`);
                 //TODO: erase the TXid? or leave it to the delegate to inspect and manually delete
-                //TODO: should this check be run as a periodic job, rather than running at relay restart only? (hence erased TXid can be paid in next payment run)
+                //TODO: can be run as a periodic job, rather than running at relay restart only? (hence erased TXid can be paid in next payment run)
             }
         }
                 
@@ -228,7 +228,7 @@ export class Processor {
                     }
                     // Anti-bot: check for voter originated outbound transfers within 1 round following a forged block - only during real-time processing
                     // and reduce valid vote to the new wallet amount if voter wallet made an outbound transfer within the round
-                    // TODO: currently checking for transfer transaction only. voter can still game the system with an HTLC-lock then immediate claim to new wallet.
+                    // TODO: Cover other transaction methods.
                     else if (config.antibot && !this.isInitialSync()) {
                         while (this.isSyncing()) {
                             await delay(100);
@@ -257,9 +257,9 @@ export class Processor {
                                         vrecord.balance = Utils.BigNumber.ZERO;
                                     const vote = vrecord.balance.times(Math.round(vrecord.votePercent * 100)).div(10000);
                                     const plan = this.configHelper.getPlan(lastForgedBlock.height, lastForgedBlock.timestamp);
-                                    vrecord.validVote = vote.isLessThan(plan.mincap) || plan.blacklist.includes(vrecord.address) ? 
-                                        Utils.BigNumber.ZERO : (plan.maxcap && vote.isGreaterThan(plan.maxcap) ? Utils.BigNumber.make(plan.maxcap) : vote);
-                
+                                    vrecord.validVote = vote.isLessThan(plan.mincapSatoshi) || plan.blacklist.includes(vrecord.address) ? 
+                                        Utils.BigNumber.ZERO : (plan.maxcapSatoshi && vote.isGreaterThan(plan.maxcapSatoshi) ? plan.maxcapSatoshi : vote);
+
                                     // recalculate allotments for all voters with the new vote distribution
                                     const validVotes = lastVoterAllocation.map( o => o.validVote).reduce((prev, curr) => prev.plus(curr), Utils.BigNumber.ZERO);
                                     const earned_tx_fees = lastForgedBlock.fees.minus(lastForgedBlock.burnedFees);
@@ -310,8 +310,8 @@ export class Processor {
                                     vrecord.votePercent = votePercent; // reduce vote percent at forged block to the new value
                                     const vote = vrecord.balance.times(Math.round(vrecord.votePercent * 100)).div(10000);
                                     const plan = this.configHelper.getPlan(lastForgedBlock.height, lastForgedBlock.timestamp);
-                                    vrecord.validVote = vote.isLessThan(plan.mincap) || plan.blacklist.includes(vrecord.address) ? 
-                                        Utils.BigNumber.ZERO : (plan.maxcap && vote.isGreaterThan(plan.maxcap) ? Utils.BigNumber.make(plan.maxcap) : vote);
+                                    vrecord.validVote = vote.isLessThan(plan.mincapSatoshi) || plan.blacklist.includes(vrecord.address) ? 
+                                        Utils.BigNumber.ZERO : (plan.maxcapSatoshi && vote.isGreaterThan(plan.maxcapSatoshi) ? plan.maxcapSatoshi : vote);
                                     
                                     // recalculate allotments for all voters with the new vote distribution
                                     const validVotes = lastVoterAllocation.map( o => o.validVote).reduce((prev, curr) => prev.plus(curr), Utils.BigNumber.ZERO);
@@ -365,9 +365,9 @@ export class Processor {
             this.logger.debug(`(LL) Processing block | round:${round.round } height:${block.height} timestamp:${block.timestamp} delegate: ${generator} reward:${block.reward} solfunds:${solfunds} block_fees:${block.totalFee} burned_fees:${block.burnedFee}`)
 
             const plan = this.configHelper.getPlan(block.height, block.timestamp);
-            const tick1 = Date.now();
+            // const tick1 = Date.now();
             const voter_roll = await this.transactionRepository.getDelegateVotesByHeight(block.height, generator, block.generatorPublicKey);
-            console.log(`(LL) voter_roll retrieved in ${Date.now() - tick1} ms`)
+            // console.log(`(LL) voter_roll retrieved in ${Date.now() - tick1} ms`)
             const lastVoterAllocation: IAllocation[] = this.sqlite.getAllVotersLastAllocation();
             let voterIndex=1;
             for (const v of voter_roll) {
@@ -384,8 +384,8 @@ export class Processor {
                 }
                 const walletBalance = prevBalance.plus(await this.transactionRepository.getNetBalanceByHeightRange(startFrom, block.height, walletAddress, v.publicKey));
                 const vote = walletBalance.times(Math.round(v.percent * 100)).div(10000);
-                const validVote = vote.isLessThan(plan.mincap) || plan.blacklist.includes(walletAddress) ? 
-                    Utils.BigNumber.ZERO : (plan.maxcap && vote.isGreaterThan(plan.maxcap) ? Utils.BigNumber.make(plan.maxcap) : vote);
+                const validVote = vote.isLessThan(plan.mincapSatoshi) || plan.blacklist.includes(walletAddress) ? 
+                    Utils.BigNumber.ZERO : (plan.maxcapSatoshi && vote.isGreaterThan(plan.maxcapSatoshi) ? plan.maxcapSatoshi : vote);
 
                 voters.push({
                     height: block.height,
@@ -537,13 +537,13 @@ export class Processor {
                 }
                 else {
                     loop = false;
-                    this.logger.debug(`(LL) Sync complete | lastChainedBlockHeight:${lastChainedBlockHeight} lastForgedBlockHeight:${lastForgedBlockHeight} lastStoredBlockHeight:${lastStoredBlockHeight}\n`)
+                    this.logger.debug(`(LL) Sync complete | lastChainedBlockHeight:${lastChainedBlockHeight} lastForgedBlockHeight:${lastForgedBlockHeight} lastStoredBlockHeight:${lastStoredBlockHeight}---`)
                 }
             }
-            // TODO: what if lastStored > lastForged ?
+            // TODO: lastStored > lastForged
             else {
                 loop = false;
-                this.logger.debug(`(LL) Sync complete | lastChainedBlockHeight:${lastChainedBlockHeight} lastForgedBlockHeight:${lastForgedBlockHeight} lastStoredBlockHeight:${lastStoredBlockHeight}\n`)
+                this.logger.debug(`(LL) Sync complete | lastChainedBlockHeight:${lastChainedBlockHeight} lastForgedBlockHeight:${lastForgedBlockHeight} lastStoredBlockHeight:${lastStoredBlockHeight}---`)
                 if (this.isInitialSync() && lastStoredBlockHeight === lastForgedBlockHeight) {
                     this.logger.debug(`(LL) backlog processed in ${this.msToHuman(Date.now() - tick0)}`)
                     this.finishedInitialSync();
@@ -566,6 +566,6 @@ export class Processor {
         sec = sec % 60;
         min = min % 60;
         
-        return `${hr}h ${this.padToNDigits(min,2)}' ${this.padToNDigits(sec,2)}" ${this.padToNDigits(ms,3)}ms`;
+        return `${hr}h:${this.padToNDigits(min,2)}m:${this.padToNDigits(sec,2)}s:${this.padToNDigits(ms,3)}ms`;
     }
 }

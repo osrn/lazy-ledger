@@ -40,7 +40,6 @@ export class Teller{
     private cronStmt!: string;
     private cronJob!: CronJob;
     private active: boolean = false;
-    private lastTxNonce: Utils.BigNumber = Utils.BigNumber.ZERO;
     // private balanceAfterLastTx: Utils.BigNumber = Utils.BigNumber.ZERO;
     // private active: boolean = false;
 
@@ -75,7 +74,7 @@ export class Teller{
             // Day of Month: 1-31
             // Months: 0-11 (Jan-Dec)
             // Day of Week: 0-6 (Sun-Sat)
-            //this.cronStmt = "0 0/2 * * * *"; // Temp cron every 2 minutes for testing with instead of the configured plan
+            // this.cronStmt = "0 0/2 * * * *"; // Temp cron every 2 minutes for testing with instead of the configured plan
             this.cronStmt = plan.payperiod <= 24 ? `0 ${plan.guardtime} ${plan.payoffset}/${plan.payperiod} * * *` 
                                                  : `0 ${plan.guardtime} ${plan.payoffset} ${cronStartDay}/${plan.payperiod} * *`;
 
@@ -207,21 +206,15 @@ export class Teller{
     }
 
     private async payBill(payments: IBill[], msg: string): Promise<string | undefined> {
-        // TODO: Find a method to get pool's wallet state to check sufficient funds and get nonce.
-        // const internalType = Transactions.InternalTransactionType.from(CoreTransactionType.Transfer, TransactionTypeGroup.Core);
-        // const handler: Handlers.TransactionHandler = await this.handlerRegistry.getActivatedHandlerByType(internalType);
-        // ...
-
         const config = this.configHelper.getConfig();
         const plan = this.configHelper.getPresentPlan(); 
-
-        let nonce = config.delegateWallet!.getNonce().plus(1);   
-        // if the nonce received is same or lesser than last one, we are still on the same block with previous unapplied Txs
-        // TODO: this method is prone to error if the sender wallet makes a simultaneous transaction from elsewhere in a race condition
-        if (nonce.isLessThanEqual(this.lastTxNonce))
-            nonce = this.lastTxNonce.plus(1);
-        this.lastTxNonce = nonce;
+        const pool = this.app.get<Contracts.Pool.Service>(Container.Identifiers.PoolService);
         
+        let nonce = pool.getPoolWallet(config.delegateAddress!)?.getNonce().plus(1) || config.delegateWallet!.getNonce().plus(1);
+        console.log("pool wallet"); console.log(pool.getPoolWallet(config.delegateAddress!));
+        console.log("delegate wallet"); console.log(config.delegateWallet);
+        console.log("nonce"); console.log(nonce);
+
         const dynfee = this.getDynamicFee(payments.length, msg.length, !!config.secondpass);
 
         const transaction = Transactions.BuilderFactory.multiPayment()
@@ -243,6 +236,12 @@ export class Teller{
             }
             txTotal = txTotal.plus(p.allotment);
         }
+        const walletBalance = pool.getPoolWallet(config.delegateAddress!)?.getBalance() || config.delegateWallet!.getBalance();
+        if (walletBalance.isLessThan(txTotal.plus(dynfee))) {
+            this.logger.critical(`(LL) Insufficient wallet balance to execute this pay order. Available:${walletBalance.toFixed()} Required:${txTotal.plus(dynfee).toFixed()}`);
+            return;
+        }
+        console.log(`(LL) Sufficient wallet balance to execute this pay order. Available:${walletBalance.toFixed()} Required:${txTotal.plus(dynfee).toFixed()}`);
         transaction.sign(config.passphrase);
         if (config.secondpass) {
             transaction.secondSign(config.secondpass);

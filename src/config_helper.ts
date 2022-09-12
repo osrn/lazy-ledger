@@ -1,3 +1,4 @@
+import { Constants, Utils } from "@solar-network/crypto";
 import { Container, Contracts, Providers, Utils as AppUtils } from "@solar-network/kernel";
 import { IConfig, IPlan } from "./interfaces";
 import { baseplan } from "./defaults";
@@ -59,12 +60,20 @@ export class ConfigHelper {
 
         this.logger.debug("(LL) Checking and fixing plan parameters...");
         // Fix invalid parameter values.
-        if ( plans[0].payperiod !== undefined && !([0,1,2,3,4,6,8,12,24].includes(plans[0].payperiod)) ) 
+        if (plans[0].payperiod !== undefined && !([0,1,2,3,4,6,8,12,24].includes(plans[0].payperiod))) {
             plans[0].payperiod = 24;
-        if ( plans[0].payperiod !== undefined && plans[0].payoffset > 24 ) 
+        }
+        if (plans[0].payperiod !== undefined && plans[0].payoffset > 24) {
             plans[0].payoffset = 0;
-        if ( plans[0].payperiod !== undefined && plans[0].guardtime > 60 ) 
+        }
+        if (plans[0].payperiod !== undefined && plans[0].guardtime > 60) {
             plans[0].guardtime = 10;
+        }
+
+        plans[0].mincapSatoshi = plans[0].mincap ? Utils.BigNumber.make(plans[0].mincap).times(Constants.SATOSHI) : Utils.BigNumber.ZERO;
+        if (plans[0].maxcap) {
+            plans[0].maxcapSatoshi = Utils.BigNumber.make(plans[0].maxcap);
+        }
 
         // make sure the first plan contains height and timestamp, converting timehuman to unix timestamp on the fly
         plans[0].height ||= 0;
@@ -83,12 +92,21 @@ export class ConfigHelper {
             plans[i].timestamp ||= plans[i-1].timestamp;
 
             // Fix invalid parameter values
-            if ( plans[i].payperiod !== undefined && !([0,1,2,3,4,6,8,12,24].includes(plans[i].payperiod)) ) 
+            if ( plans[i].payperiod !== undefined && !([0,1,2,3,4,6,8,12,24].includes(plans[i].payperiod)) ) {
                 plans[i].payperiod = 24;
-            if ( plans[i].payperiod !== undefined && plans[i].payoffset > 24 ) 
+            }
+            if ( plans[i].payperiod !== undefined && plans[i].payoffset > 24 ) {
                 plans[i].payoffset = 0;
-            if ( plans[i].payperiod !== undefined && plans[i].guardtime > 60 ) 
+            }
+            if ( plans[i].payperiod !== undefined && plans[i].guardtime > 60 ) {
                 plans[i].guardtime = 10;
+            }
+
+            // Convert parameters
+            plans[i].mincapSatoshi = plans[i].mincap ? Utils.BigNumber.make(plans[i].mincap) : Utils.BigNumber.ZERO;
+            if (plans[i].maxcap) {
+                plans[i].maxcapSatoshi = Utils.BigNumber.make(plans[i].maxcap);
+            }
         }
 
         // The first plan height must be zero - otherwise getPlan filter may return empty.

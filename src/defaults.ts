@@ -21,7 +21,7 @@ export const defaults = {
             donations: [],
             blacklist: [],
             mincap: 0,
-            maxcap: 0,
+            maxcap: undefined,
             payperiod: 24,
             payoffset: 0,
             guardtime: 10
@@ -39,7 +39,7 @@ export const baseplan = {
     donations: [],
     blacklist: [],
     mincap: 0,
-    maxcap: 0,
+    maxcap: undefined,
     payperiod: 24,
     payoffset: 0,
     guardtime: 10
