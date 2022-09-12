@@ -365,9 +365,9 @@ export class Processor {
             this.logger.debug(`(LL) Processing block | round:${round.round } height:${block.height} timestamp:${block.timestamp} delegate: ${generator} reward:${block.reward} solfunds:${solfunds} block_fees:${block.totalFee} burned_fees:${block.burnedFee}`)
 
             const plan = this.configHelper.getPlan(block.height, block.timestamp);
-            const tick1 = Date.now();
+            // const tick1 = Date.now();
             const voter_roll = await this.transactionRepository.getDelegateVotesByHeight(block.height, generator, block.generatorPublicKey);
-            console.log(`(LL) voter_roll retrieved in ${Date.now() - tick1} ms`)
+            // console.log(`(LL) voter_roll retrieved in ${Date.now() - tick1} ms`)
             const lastVoterAllocation: IAllocation[] = this.sqlite.getAllVotersLastAllocation();
             let voterIndex=1;
             for (const v of voter_roll) {
@@ -537,13 +537,13 @@ export class Processor {
                 }
                 else {
                     loop = false;
-                    this.logger.debug(`(LL) Sync complete | lastChainedBlockHeight:${lastChainedBlockHeight} lastForgedBlockHeight:${lastForgedBlockHeight} lastStoredBlockHeight:${lastStoredBlockHeight}\n`)
+                    this.logger.debug(`(LL) Sync complete | lastChainedBlockHeight:${lastChainedBlockHeight} lastForgedBlockHeight:${lastForgedBlockHeight} lastStoredBlockHeight:${lastStoredBlockHeight}---`)
                 }
             }
             // TODO: what if lastStored > lastForged ?
             else {
                 loop = false;
-                this.logger.debug(`(LL) Sync complete | lastChainedBlockHeight:${lastChainedBlockHeight} lastForgedBlockHeight:${lastForgedBlockHeight} lastStoredBlockHeight:${lastStoredBlockHeight}\n`)
+                this.logger.debug(`(LL) Sync complete | lastChainedBlockHeight:${lastChainedBlockHeight} lastForgedBlockHeight:${lastForgedBlockHeight} lastStoredBlockHeight:${lastStoredBlockHeight}---`)
                 if (this.isInitialSync() && lastStoredBlockHeight === lastForgedBlockHeight) {
                     this.logger.debug(`(LL) backlog processed in ${this.msToHuman(Date.now() - tick0)}`)
                     this.finishedInitialSync();
@@ -566,6 +566,6 @@ export class Processor {
         sec = sec % 60;
         min = min % 60;
         
-        return `${hr}h ${this.padToNDigits(min,2)}' ${this.padToNDigits(sec,2)}" ${this.padToNDigits(ms,3)}ms`;
+        return `${hr}h:${this.padToNDigits(min,2)}m:${this.padToNDigits(sec,2)}s:${this.padToNDigits(ms,3)}ms`;
     }
 }

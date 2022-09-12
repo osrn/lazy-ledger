@@ -18,7 +18,7 @@ All timestamps are unix except forged time, which is Solar epochstamp.
 
 [^3]: valid amount after mincap, maxcap, blacklist and anti-bot processing
 
-Following the boot sequence plugin retrieves all past forged blocks from the core database, calculating stakeholders and allocations valid for the block's height & timestamp using the corresponding plan. Following initial sync, Ledger is updated in real time triggered by the core events.
+Following the boot sequence plugin retrieves all past forged blocks from the core database, calculating stakeholders and allocations valid for the block's height & timestamp using the corresponding plan. Only blocks after first plan with non-zero allocation are retrieved for the sake of first-time synchronisation duration. Following initial sync, Ledger is updated in real time triggered by the core events.
 
 Governed by the plan parameters, a periodic payment job distributes rewards to the stakeholders. Transaction fee is calculated dynamically. Transfer recipients and pool sender limits are respected. A debt is only settled when the corresponding transaction is forged, but unsettled back should the transaction is reverted afterwards.
 
@@ -36,6 +36,7 @@ Offending address votes are recalculated only when:
 No action taken if **vote percent increases** or **funds received** or the **allocation for that block is already in transaction pool**.
 
 ## Installation
+**Preferred method:**
 ```bash
 solar plugin:install https://github.com/osrn/lazy-ledger.git
 ```
@@ -54,10 +55,10 @@ ln -s ~/solar-core/plugins/lazy-ledger lazy-ledger
 ```
 
 ## Configuration
-The plugin must be configured by adding a section in `~/.config/solar-core/{mainnet|testnet}/app.json`. Add a new entry to the end of the `plugins` section within the `relay` block. A sample entry is provided [below](#sample-configuration). Configuration options explanied [here](#config-options).
+The plugin must be configured by adding a section in `~/.config/solar-core/{mainnet|testnet}/app.json` at the end of the `plugins` within the `relay` block. A sample entry is provided [below](#sample-configuration). Configuration options explanied [here](#config-options).
 
 This sample config will;
-- allocate 100% to reserve address until block height 100000, paying every 24 hours at 00:10 UTC
+- allocate 100% to reserve address starting with 90000 until block height 100000, paying every 24 hours at 00:10 UTC
 - allocate 50% to voters, 50% to reserve address starting with block 100000 until 2022-08-14T23:59:59.999 UTC, paying every 24 hours at 00:10 UTC
 - allocate 90% to voters, 10% to reserve address between 2022-08-15T00:00:00.000Z and 2022-08-22T00:00:00.000Z, paying every 6 hours at 10 minutes past UTC.
 - allocate 50% to voters, 50% to reserve address after 2022-08-22T00:00:00.000, paying every 24 hours at 00:10 UTC
@@ -87,7 +88,7 @@ Payment plans follows a milestone principle: higher index properties override th
                     "whitelist": [],
                     "plans": [
                         {
-                            "height": 0,
+                            "height": 90000,
                             "share": 0,
                             "reserves": [
                                 {"address": "reserve_wallet_address", "share": 100}
@@ -102,9 +103,9 @@ Payment plans follows a milestone principle: higher index properties override th
                         },
                         {
                             "height": 100000,
-                            "share": 65,
+                            "share": 50,
                             "reserves": [
-                                {"address": "reserve_wallet_address", "share": 35}
+                                {"address": "reserve_wallet_address", "share": 50}
                             ]
                         }
                         {
@@ -152,21 +153,21 @@ Payment plans follows a milestone principle: higher index properties override th
 
 | Name | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| height? | number | 0 | Activate plan at this height. Optional.|
+| height? | number | 0 | Activate plan at this height. Mandatory only for first non-zero allocation plan.|
 | timestamp? | number \| string | | Activate plan at this time. Optional.<br>unix timestamp (not Solar epochStamp) \| YYYY-MM-DDTHH:mm:ss.sssZ \| YYYY-MM-DDTHH:mm:ss.sss+-hh:mm |
 | share | number | 50 | voter share ratio. 0-100, up to 2 decimal places | 
 | reserves | Array\<Payee\> | | recipients for rewards kept. Mandatory for first (base) plan |
 | donations | Array\<Payee\> | [] | recipients for donations |
-| mincap | number | 0 | minimum voter wallet balance eligible for rewards allocation |
-| maxcap | number | 0 | maximum vote weight from an address |
+| mincap | number | 0 | minimum voter wallet balance eligible for rewards allocation (SXP)|
+| maxcap | number | 0 | maximum vote weight from an address (SXP)|
 | blacklist | string[] | [] | addresses blacklisted from rewards allocation |
-| payperiod | number | 24 | Payment cycle - every [0,1,2,3,4,6,8,12,24] hours. If zero will not handle payment - except the case when `postInitInstantPay` is true|
+| payperiod | number | 24 | Payment cycle - every [0,1,2,3,4,6,8,12,24] hours. Zero will not handle payment - except the case when `postInitInstantPay` is true|
 | payoffset | number | 0 | new cycle begins at UTC 00:00 + offset hrs. 0-23. |
 | guardtime | number | 10 | delay in minutes before preparing the payment order at the end of a payment cycle - precaution against block reverts. 0-59. |
 
 >share + reserves[].share + donations[].share = 100 recommended, but not enforced!
 
->payperiod:24, payoffset:3, guardtime:30 will schedule payments at 00:30 Turkish time, daily for allocations from 21:00 UTC previous day to UTC 21:00 today.
+>payperiod:24, payoffset:18, guardtime:30 will schedule daily payments at 18:30 UTC, for allocations from 18:00 UTC previous day to UTC 18:00 today. 
 
 ### Payee
 | Name | Type | Default | Description |
@@ -175,7 +176,7 @@ Payment plans follows a milestone principle: higher index properties override th
 | share | number | 50 | share ratio. 0-100, up to 2 decimal places | 
 
 ## Running
-Configure, then restart relay. First time sync may take ~10+mins for 1.2M blocks depending on the node capacity.
+Configure, then restart relay. First time sync may take ~15+mins depending on the node capacity and how far back your first non-zero allocation plan's height goes.
 
 ## CLI
 **`solar ll:alloc [--round m] [--height n]`**<br>
@@ -296,10 +297,51 @@ Uses the core logger utility with (LL) prefix.<br>
 Use `pm2 logs solar-relay` or `less -R +F ~/.pm2/logs/solar-relay-out.log` to watch the logs in real time.<br>
 Use `grep "(LL)" ~/.pm2/logs/solar-relay-out.log` or `less -R ~/.pm2/logs/solar-relay-out.log` then less command `&(LL)` to filter for Lazy-Ledger output.
 
-## Accuracy checks
-Query the database[^4] for last block voters just after you forged a block with `solar ll:alloc`,
+```log
+--- boot
+@osrn/Lazy-Ledger (LL) Reward Sharing Plugin registered +1s 663ms
+(LL) Database boot complete
+(LL) Processor boot complete
+(LL) Teller schedule 0 8 0/24 * * * started. Next 3 runs will be Mon Sep 12 2022 00:08:00 GMT+0000,Tue Sep 13 2022 00:08:00 GMT+0000,Wed Sep 14 2022 00:08:00 GMT+0000
+(LL) Teller boot complete
+(LL) Plugin boot complete +8s 844ms
+--- initial sync
+(LL) Starting (initial|catch-up) sync ...
+(LL) Received batch of 133 blocks to process | heights: 1794003,1794102,1794143,1794166,1794221,1794263,1794318,...
+(LL) Processing block | round:33850 height:1794003 timestamp:14361288 delegate: osrn reward:1237500000 solfunds:61875000 block_fees:0 burned_fees:0
+(LL) block processed in 0h:04':19".813ms
+(LL) Completed processing batch of 1 blocks in 0h:00':04".498ms
+(LL) Sync complete | lastChainedBlockHeight:1801089 lastForgedBlockHeight:1801051 lastStoredBlockHeight:1801051
+(LL) backlog processed in 0h:09':26".629ms
+(LL) Finished (initial|catch-up) sync
+--- normal opearation / allocation
+(LL) Received new block applied event at 1805087 forged by us
+(LL) Starting  sync ...
+(LL) Received batch of 1 blocks to process | heights: 1805087
+(LL) Processing block | round:34059 height:1805087 timestamp:14449968 delegate: osrn reward:1275000000 solfunds:63750000 block_fees:0 burned_fees:0
+(LL) Completed processing batch of 1 blocks in 0h 00' 01" 533ms
+(LL) Sync complete | lastChainedBlockHeight:1805087 lastForgedBlockHeight:1805087 lastStoredBlockHeight:1805087
+--- Anti-bot
+(LL) Anti-bot detected voter S********************************g vote percent reduction (100 => 0) within round [34027-34028].
+(LL) Redistributing block allocations for height 1803391.
+(LL) Anti-bot detected voter S********************************t balance reduction of 73** SXP within round [34061-34061].
+(LL) Redistributing block allocations for height 1805186.
+--- Payment
+(LL) Teller run starting at Mon, 12 Sep 2022 00:08:00 GMT
+(LL) Fetched 250 bill items from the database
+(LL) Bill reduced to 250 items after filtering out delegate address
+(LL) Bill produced 2 pay-orders after grouping by pay-period
+(LL) Pay-order will be processed in 1 chunks of transactions
+(LL) Passing transaction to Pool Processor | {"fee":"17603842","headerType":0,"id":"71f63492736bca143ae5cac1f4effd0ffb2c9561770b59dfcc1e572f993fac1e","memo":"osrn rewards for 2022-09-10-1/1","s
+(LL) Transaction 1a160ef3e5786b482b97535a40a428a9697d48cb408b72295c0dda23039af24f successfully sent!
+(LL) Teller run complete. Next run is 2022-09-13T00:08:00.000Z
+(LL) Received a transaction applied event 71f63492736bca143ae5cac1f4effd0ffb2c9561770b59dfcc1e572f993fac1e which is in the watchlist
+(LL) Marked allocations with txid 71f63492736bca143ae5cac1f4effd0ffb2c9561770b59dfcc1e572f993fac1e as settled
+```
 
-then compare `balance|orgBalance`, `votePercent|orgVotePercent` and `vote|validVote` against api output at `https://tapi.solar.org/api/delegates/username/voters`, within the window of one forging cycle (or 1 block time if any of the protocol level funded wallets are voting for you). Note that `balance`, `votePercent` and `validVote` are effected by cap, blacklist and anti-bot.
+## Accuracy checks
+Right after you forged a block, query the database[^4] for last block voters with `solar ll:alloc`, 
+then compare `balance|orgBalance`, `votePercent|orgVotePercent` and `vote|validVote` against api output at `https://{t}api.solar.org/api/delegates/username/voters` taken within 1 block time (~8 secs). Note that `balance`, `votePercent` and `validVote` are effected by cap, blacklist and anti-bot.
 
 You are welcome to make any other accuracy checks by direct database query.
 
