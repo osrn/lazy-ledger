@@ -211,9 +211,8 @@ export class Teller{
         const pool = this.app.get<Contracts.Pool.Service>(Container.Identifiers.PoolService);
         
         let nonce = pool.getPoolWallet(config.delegateAddress!)?.getNonce().plus(1) || config.delegateWallet!.getNonce().plus(1);
-        console.log("pool wallet"); console.log(pool.getPoolWallet(config.delegateAddress!));
-        console.log("delegate wallet"); console.log(config.delegateWallet);
-        console.log("nonce"); console.log(nonce);
+        // console.log("pool wallet"); console.log(pool.getPoolWallet(config.delegateAddress!));
+        // console.log("delegate wallet"); console.log(config.delegateWallet);
 
         const dynfee = this.getDynamicFee(payments.length, msg.length, !!config.secondpass);
 
@@ -241,7 +240,7 @@ export class Teller{
             this.logger.critical(`(LL) Insufficient wallet balance to execute this pay order. Available:${walletBalance.toFixed()} Required:${txTotal.plus(dynfee).toFixed()}`);
             return;
         }
-        console.log(`(LL) Sufficient wallet balance to execute this pay order. Available:${walletBalance.toFixed()} Required:${txTotal.plus(dynfee).toFixed()}`);
+        this.logger.debug(`(LL) Sufficient wallet balance to execute this pay order. Available:${walletBalance.toFixed()} Required:${txTotal.plus(dynfee).toFixed()}`);
         transaction.sign(config.passphrase);
         if (config.secondpass) {
             transaction.secondSign(config.secondpass);
