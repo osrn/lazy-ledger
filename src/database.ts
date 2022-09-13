@@ -288,11 +288,11 @@ export class Database {
                 WHERE allotment > 0 AND transactionId = '') al
             LEFT JOIN (
               -- shift epochstamp with epoch and payment time offset
-              SELECT height, ${t0} + timestamp - ( ${offset} * 60 * 60 ) AS ts
+              SELECT height, ${t0} + timestamp - ( ${offset} * 60 * 60 ) AS ts, ${t0} + timestamp as rts
               FROM forged_blocks
             ) fb 
             ON al.height = fb.height
-            WHERE fb.ts < ${until}
+            WHERE fb.rts < ${until}
         )
         GROUP BY y,m,d,q,payeeType,address`;
 
