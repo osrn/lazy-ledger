@@ -111,8 +111,8 @@ export class Database {
     }
 
     public getAllVotersLastAllocation(height: number = 0): IAllocation[] {
-        const result = this.database
-            .prepare(`SELECT m.* FROM allocations m INNER JOIN (
+        const result = this.database.prepare(
+           `SELECT m.* FROM allocations m INNER JOIN (
                 SELECT address, MAX(height) as height from allocations
                 WHERE payeeType = 1
                 GROUP BY address
@@ -121,7 +121,7 @@ export class Database {
             AND m.height = g.height
             WHERE payeeType = 1
             ORDER by m.height ASC`)
-            .all();
+        .all();
         
         (result as unknown as IAllocation[]).forEach(r => { 
             r.balance = Utils.BigNumber.make(r.balance);
@@ -173,13 +173,13 @@ export class Database {
     }
 
     // First of, last of and number of forged blocks between two dates,
-    public getRangeBounds(start: number, end: number, network?: Types.NetworkName): { forgedBlock: number; firstForged: number; lastForged:number } {
+    public getRangeBounds(start: number, end: number, network?: Types.NetworkName): { forgedCount: number; firstForged: number; lastForged:number } {
         if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
             Managers.configManager.setFromPreset(network!);
         } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         const result = this.database.prepare(
-           `SELECT COUNT(height) as forgedBlock, MIN(height) as firstForged, MAX(height) as lastForged FROM forged_blocks fb 
+           `SELECT COUNT(height) as forgedCount, MIN(height) as firstForged, MAX(height) as lastForged FROM forged_blocks fb 
             WHERE (${t0} + fb."timestamp") >= ${start}
               AND (${t0} + fb."timestamp") < ${end}`)
         .get();
@@ -253,6 +253,69 @@ export class Database {
         }
         return result;
     }
+
+    public getPendingSimple(): any {
+        const lastPaidHeight = this.getLastPaidSummary()?.height || 0;
+
+        const result = this.database.prepare(
+           `SELECT MIN(round) AS minRound, MAX(round) AS maxRound, COUNT(round) AS rounds, 
+	               MIN(height) AS minHeight, MAX(height) AS maxHeight, COUNT(height) AS blocks, 
+	               ROUND(SUM(reward),8) AS blockRewards, ROUND(SUM(solfunds),8) AS blockFunds, 
+	               ROUND(SUM(fees),8) as blockFees, ROUND(SUM(burnedFees),8) AS burnedFees, 
+	               ROUND(SUM(earnedRewards),8) AS earnedRewards, ROUND(SUM(earnedFees),8) AS earnedFees
+            FROM forged_blocks_human fbh 
+            WHERE height > ${lastPaidHeight}`)
+        .get();
+
+        //console.log(`(LL) query to run:\n ${sqlstr}`);
+        return result;
+    }
+
+    // public getPending(period: number, offset: number, scope: PendingTypes, network?: Types.NetworkName): any {
+    //     if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
+    //         Managers.configManager.setFromPreset(network!);
+    //     } 
+    //     const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
+    //     const now = new Date();
+
+    //     // Amount to be retrieved is;
+    //     //  -- all pending up until last payment period if PendingType.due
+    //     //  -- all pending from last payment period to now if PendingType.current
+    //     //  -- anything pending
+    //     period ||= 24; // prevent div/0 against period=0 leakage
+    //     if (scope === PendingTypes.due || scope === PendingTypes.current) {
+    //         // TODO: Handle case period > 24
+
+    //         // find when the current payment slot ended to exclude blocks forged after that
+    //         // (e.g. until 06:59:59 if offset is 3 and payperiod is 4) where q would be 2 of 6
+    //         now.setUTCHours(now.getUTCHours() - ((now.getUTCHours() - offset) % period), 0, 0, 0)
+    //     }
+    //     // cutoff time is current time only with PendingTypes.all
+    //     const cutoffts = Math.floor(now.getTime() / 1000)
+    //     const bracket = (scope === PendingTypes.current) ? ">" : "<";
+
+    //     const result = this.database.prepare(
+    //        `SELECT MIN(round) AS minRound, MAX(round) AS maxRound, COUNT(round) AS rounds, 
+	//                MIN(height) AS minHeight, MAX(height) AS maxHeight, COUNT(height) AS blocks, 
+	//                SUM(reward) AS blockRewards, SUM(solfunds) AS blockFunds, 
+	//                SUM(fees) as blockFees, SUM(burnedFees) AS burnedFees, 
+	//                SUM(earnedRewards) AS earnedRewards, SUM(earnedFees) AS earnedFees
+    //         FROM forged_blocks_human fbh 
+    //         -- As unpaid allocations may span intermittent block ranges, 
+    //         -- we just cannot sum a fixed range of blocks to find due amount.
+    //         -- Thus, match against a filtered list
+    //         WHERE height IN (
+    //         	SELECT DISTINCT al.height
+	//             FROM allocations al INNER JOIN (SELECT height, ${t0} + timestamp as rts FROM forged_blocks) AS fb
+	//             ON al.height = fb.height 
+	//             WHERE al.allotment > 0 
+	//             AND al.transactionId = ''
+	//             AND fb.rts ${bracket} ${cutoffts})`)
+    //     .all();
+
+    //     //console.log(`(LL) query to run:\n ${sqlstr}`);
+    //     return result;
+    // }
 
     public getBill(period: number, offset: number, now: Date): IBill[] {
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);

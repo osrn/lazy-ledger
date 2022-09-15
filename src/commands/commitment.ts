@@ -41,7 +41,7 @@ export class Command extends Commands.Command {
         const sqlite = new Database();
         sqlite.init(this.app.getCorePath("data"));
         const range = sqlite.getRangeBounds(start, end, network);
-        this.components.log(`Range contains ${range.forgedBlock} blocks and bounds are:
+        this.components.log(`Range contains ${range.forgedCount} blocks and bounds are:
 (date)     : [${startDate}, ${endDate})
 (unixstamp): [${start}, ${end})
 (height)   : [${range.firstForged}, ${range.lastForged}]\n`)

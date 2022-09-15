@@ -93,4 +93,10 @@ export interface IBill {
     address: string, 
     duration: number, 
     allotment: string 
-};
+}
+
+export enum PendingTypes {
+    due = 0,
+    current,
+    all
+}

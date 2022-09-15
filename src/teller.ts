@@ -141,7 +141,7 @@ export class Teller{
             pay_orders = this.objArrayGroupBy(pay_order, (obj) => [obj.y,obj.m,obj.d,obj.q]);
             this.logger.debug(`(LL) Bill produced ${pay_orders.length} pay-orders after grouping by pay-period`);
         }
-
+        
         let txCounter = 0;
         const maxTxPerSender = this.poolConfiguration.getRequired<number>("maxTransactionsPerSender");
         const maxAddressesPerTx = Managers.configManager.getMilestone().transfer.maximum || 256;

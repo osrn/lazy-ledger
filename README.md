@@ -224,6 +224,35 @@ Retrieving data for the last paid allocation ...
 }
 ```
 ---
+**`solar ll:pending [--raw | --json | --format="std | json | raw]`**<br>
+shows pending (=unpaid) allocations since last payment.
+```
+Flags:
+--format     Display output as standard, formatted JSON or raw
+--json       Short for format="all". Overrides format
+--raw        Short for format="raw". Overrides format and json
+```
+```bash
+solar ll:pending
+Retrieving pending allocations since last payment ...
+┌───────────────┬─────────────┐
+│    (index)    │   Values    │
+├───────────────┼─────────────┤
+│   minRound    │      1      │
+│   maxRound    │    1429     │
+│    rounds     │    1430     │
+│   minHeight   │     45      │
+│   maxHeight   │    75726    │
+│    blocks     │    1430     │
+│ blockRewards  │  16817.375  │
+│  blockFunds   │  840.36875  │
+│   blockFees   │      0      │
+│  burnedFees   │      0      │
+│ earnedRewards │ 15977.00625 │
+│  earnedFees   │      0      │
+└───────────────┴─────────────┘
+```
+---
 **`solar ll:commitment --start <datetime> --end <datetime>`**<br>
 shows voter commitment (continuous blocks voting balance not reduced) during a time frame
 ```
