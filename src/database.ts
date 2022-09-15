@@ -187,13 +187,13 @@ export class Database {
         return result;
     }
 
-    public getVoterCommitment(start: number, end: number, network?: Types.NetworkName): any {
+    public getVoterCommitment(start: number, end: number, network?: Types.NetworkName): {roundCount: number; blockCount: number; address: string; continuousVotes: number}[] {
         if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
             Managers.configManager.setFromPreset(network!);
         } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         const result = this.database.prepare(
-           `SELECT COUNT(fb.round) AS roundCount, COUNT(al.height) AS blockCount, al.address, SUM(al.validVote <= al.nextVote) AS continuousVotes 
+           `SELECT COUNT(fb.round) AS roundCount, COUNT(al.height) AS blockCount, al.address, SUM(CAST(al.validVote AS INTEGER) <= CAST(al.nextVote AS INTEGER)) AS continuousVotes 
             FROM forged_blocks fb INNER JOIN (
                 SELECT height, address, validVote, lead(validVote,1,0) OVER (PARTITION BY address ORDER BY height) as nextVote
                 FROM allocations
@@ -205,32 +205,7 @@ export class Database {
               AND (${t0} + fb."timestamp") < ${end}
             GROUP BY al.address`)
         .all();
-        
-        return result;
-    }
 
-    public getCommittedVoterAddresses(start: number, end: number, network?: Types.NetworkName): { address: string } [] {
-        if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
-            Managers.configManager.setFromPreset(network!);
-        } 
-        const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
-        const result = this.database.prepare(
-           `SELECT address FROM (
-                SELECT COUNT(fb.round) AS roundCount, COUNT(al.height) AS blockCount, al.address, SUM(al.validVote <= al.nextVote) AS continuousVotes 
-                FROM forged_blocks fb INNER JOIN (
-                    SELECT height, address, validVote, lead(validVote,1,0) OVER (PARTITION BY address ORDER BY height) as nextVote
-                    FROM allocations
-                    WHERE payeeType = 1
-                    AND votePercent > 0
-                ) AS al 
-                ON fb.height = al.height
-                WHERE (${t0} + fb."timestamp") >= ${start}
-                AND (${t0} + fb."timestamp") < ${end}
-                GROUP BY al.address
-            ) AS vs 
-            WHERE continuousVotes = blockCount`)
-        .all();
-        
         return result;
     }
 

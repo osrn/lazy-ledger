@@ -47,13 +47,17 @@ export class Command extends Commands.Command {
 (height)   : [${range.firstForged}, ${range.lastForged}]\n`)
 
         this.components.log("voter commitment during the range is:")
-        console.log(sqlite.getVoterCommitment(start, end, network));
+        const voterCommitment = sqlite.getVoterCommitment(start, end, network);
+        voterCommitment.forEach( al => console.log(al));
         console.log();
 
-        this.components.log(`Committed addresses during the range, and respective valid voting balances at the beginning of the range (height ${range.firstForged}) are:`);
-        const addresses = sqlite.getCommittedVoterAddresses(start, end, network).map( a => a.address);
+        this.components.log(`Committed addresses during the range, and respective valid voting balances at the beginning of the range (height ${range.firstForged}) are:`);        
+        // Filter for only committed voters
+        const addresses = voterCommitment.filter(al => al.continuousVotes === al.blockCount).map(al => al.address);
+        // List committed voter addresses and valid voting balances at first block of the range
         sqlite.getVoterAllocationAtHeight(range.firstForged)
-              .filter( al => addresses.includes(al.address))
+              .filter( al => addresses.includes(al.address) && !al.validVote.isZero())
+              .sort( (n1,n2) => n1.address >= n2.address ? 1:-1 ) // not care about equal strings as they are sorted already:
               .forEach( al => console.log(al.address, al.validVote.toFixed()));
-    }
+}
 }
