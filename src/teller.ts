@@ -75,7 +75,7 @@ export class Teller{
             // Months: 0-11 (Jan-Dec)
             // Day of Week: 0-6 (Sun-Sat)
             // this.cronStmt = "0 0/2 * * * *"; // Temp cron every 2 minutes for testing with instead of the configured plan
-            this.cronStmt = plan.payperiod <= 24 ? `0 ${plan.guardtime} ${plan.payoffset}/${plan.payperiod} * * *` 
+            this.cronStmt = plan.payperiod <= 24 ? `0 ${plan.guardtime} ${plan.payoffset % plan.payperiod}/${plan.payperiod} * * *` 
                                                  : `0 ${plan.guardtime} ${plan.payoffset} ${cronStartDay}/${plan.payperiod} * *`;
 
             this.cronJob = new CronJob(this.cronStmt, this.getBill, null, true, undefined, this, undefined, 0);
