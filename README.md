@@ -179,8 +179,13 @@ Payment plans follows a milestone principle: higher index properties override th
 Configure, then restart relay. First time sync may take ~15+mins depending on the node capacity and how far back your first non-zero allocation plan's height goes.
 
 ## CLI
-**`solar ll:alloc [--round m] [--height n]`**<br>
-shows the block allocation at given round or height; former having priority over the latter. Last round if arguments skipped.
+**`solar ll:alloc [--round m | --height n]`**<br>
+shows the block allocation at given round or height; former having priority over the latter if both provided. Last round if arguments skipped.
+```
+Flags
+--height     Block height. Last block if missing or 0.
+--round      Round. Last round if missing or 0.
+```
 ```bash
 Retrieving data from last block ...
 [
@@ -213,6 +218,10 @@ Retrieving data from last block ...
 ---
 **`solar ll:lastpaid [--all]`**<br>
 shows the last paid allocations - summary if flag skipped.
+```
+Flags 
+--all        list involved allocations.
+```
 ```bash
 solar ll:lastpaid
 Retrieving data for the last paid allocation ...
@@ -255,6 +264,11 @@ Retrieving pending allocations since last payment ...
 ---
 **`solar ll:commitment --start <datetime> --end <datetime>`**<br>
 shows voter commitment (continuous blocks voting balance not reduced) during a time frame
+```
+Flags
+--start      Start date (YYYY-MM-DDTHH:mm:ss.sssZ | YYYY-MM-DDTHH:mm:ss.sss+-hh:mm), included.
+--end        End date (YYYY-MM-DDTHH:mm:ss.sssZ | YYYY-MM-DDTHH:mm:ss.sss+-hh:mm), excluded.
+```
 ```
 solar ll:commitment --start 2022-09-01 --end 2022-09-08
 Range contains 1425 blocks and bounds are:
@@ -316,6 +330,10 @@ DHhKUBifRu4BGdznw48pGnWEwaywxozKSZ 0
 ---
 **`solar ll:rollback <height>`**<br>
 deletes all records starting with (and including) the first block of the round for the given height.
+```
+Arguments             
+height    Block height
+```
 ```bash
 solar ll:rollback 100000
 ✔ This will remove all records in LL database STARTING WITH & INCLUDING height 99959 which is the first block of the round 1887 and is irreversible. Are you sure? › (y/N)

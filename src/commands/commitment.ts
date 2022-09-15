@@ -20,8 +20,8 @@ export class Command extends Commands.Command {
         this.definition
             .setFlag("token", "The name of the token", Joi.string().default("solar"))
             .setFlag("network", "The name of the network", Joi.string().valid(...Object.keys(Networks)))
-            .setFlag("start", "Start date (YYYY-MM-DD HH:mm:ss), incl.", Joi.date().iso().required())
-            .setFlag("end", "End date (YYYY-MM-DD HH:mm:ss), excl.", Joi.date().iso().required());
+            .setFlag("start", "Start date (YYYY-MM-DDTHH:mm:ss.sssZ | YYYY-MM-DDTHH:mm:ss.sss+-hh:mm), included.", Joi.date().iso().required())
+            .setFlag("end", "End date (YYYY-MM-DDTHH:mm:ss.sssZ | YYYY-MM-DDTHH:mm:ss.sss+-hh:mm), excluded.", Joi.date().iso().required());
     }
 
     public async execute(): Promise<void> {

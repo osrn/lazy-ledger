@@ -20,7 +20,7 @@ export class Command extends Commands.Command {
         this.definition
             .setFlag("token", "The name of the token", Joi.string().default("solar"))
             .setFlag("network", "The name of the network", Joi.string().valid(...Object.keys(Networks)))
-            .setFlag("all", "all for showing all allocations individually", Joi.boolean().default(false));
+            .setFlag("all", "list involved allocations", Joi.boolean().default(false));
     }
 
     public async execute(): Promise<void> {

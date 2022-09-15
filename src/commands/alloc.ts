@@ -21,8 +21,8 @@ export class Command extends Commands.Command {
         this.definition
             .setFlag("token", "The name of the token", Joi.string().default("solar"))
             .setFlag("network", "The name of the network", Joi.string().valid(...Object.keys(Networks)))
-            .setFlag("height", "Block height. Last block if empty or 0.", Joi.number().integer().min(0))
-            .setFlag("round", "Round. Last round if empty or 0.", Joi.number().integer().min(0));
+            .setFlag("height", "Block height. Last block if missing or 0.", Joi.number().integer().min(0))
+            .setFlag("round", "Round. Last round if missing or 0.", Joi.number().integer().min(0));
     }
 
     public async execute(): Promise<void> {
