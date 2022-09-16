@@ -42,17 +42,22 @@ export class Command extends Commands.Command {
         const format = this.getFlag("raw") ? "raw" : (this.getFlag("json") ? "json" : this.getFlag("format"));
         const data = sqlite.getPendingSimple();
         this.components.log(`Retrieving pending allocations since last payment ...`);
-        switch (format) {
-            case "raw": {
-                this.components.log(data);
-                break;
-            }
-            case "json": {
-                this.components.log(JSON.stringify(data, null, 4));
-                break;
-            }
-            default: {
-                console.table(data);
+        if (typeof data === undefined || data?.blockRewards === null) {
+            console.log("nothing pending yet.")
+        }
+        else {
+            switch (format) {
+                case "raw": {
+                    this.components.log(data);
+                    break;
+                }
+                case "json": {
+                    this.components.log(JSON.stringify(data, null, 4));
+                    break;
+                }
+                default: {
+                    console.table(data);
+                }
             }
         }
     }

@@ -230,7 +230,18 @@ export class Database {
     }
 
     public getPendingSimple(): any {
-        const lastPaidHeight = this.getLastPaidSummary()?.height || 0;
+        let fromHeight = this.getLastPaidSummary()?.height;
+
+        if (!fromHeight) {
+            fromHeight = this.database
+                .prepare("SELECT MIN(height) FROM allocations WHERE allotment > 0 ORDER BY height LIMIT 1")
+                .pluck()
+                .get();
+        }
+
+        if (typeof fromHeight === undefined) {
+            return undefined;
+        }
 
         const result = this.database.prepare(
            `SELECT MIN(round) AS minRound, MAX(round) AS maxRound, COUNT(round) AS rounds, 
@@ -239,7 +250,7 @@ export class Database {
 	               ROUND(SUM(fees),8) as blockFees, ROUND(SUM(burnedFees),8) AS burnedFees, 
 	               ROUND(SUM(earnedRewards),8) AS earnedRewards, ROUND(SUM(earnedFees),8) AS earnedFees
             FROM forged_blocks_human fbh 
-            WHERE height > ${lastPaidHeight}`)
+            WHERE height > ${fromHeight}`)
         .get();
 
         //console.log(`(LL) query to run:\n ${sqlstr}`);
