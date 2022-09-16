@@ -323,7 +323,7 @@ export class Database {
               al.address, al.payeeType, al.allotment
             FROM (
                 SELECT height, address, payeeType, allotment FROM allocations
-                WHERE allotment > 0 AND transactionId = '') al
+                WHERE allotment > 0 AND transactionId = '' AND settled = 0) al
             LEFT JOIN (
               -- shift epochstamp with epoch and payment time offset
               SELECT height, ${t0} + timestamp - ( ${offset} * 60 * 60 ) AS ts, ${t0} + timestamp as rts
@@ -368,6 +368,7 @@ export class Database {
         WHERE allocations.height = fb.height
             AND transactionId = ''
             AND allotment > 0
+            AND settled = 0
             AND fb.ts < ${until}
             AND strftime('%Y', fb.ts, 'unixepoch') = '${y}'
             AND strftime('%m', fb.ts, 'unixepoch') = '${m}'
@@ -396,7 +397,7 @@ export class Database {
     }
 
     public settleAllocation(txid: string, timestamp: number): SQLite3.RunResult {
-        const sqlstr = `UPDATE allocations SET settled = ${timestamp} WHERE transactionId = '${txid}'`;
+        const sqlstr = `UPDATE allocations SET settled = ${timestamp} WHERE transactionId = '${txid}' AND settled = 0`;
 
         //console.log(`(LL) query to run:\n ${sqlstr}`);
         const result: SQLite3.RunResult = this.database
