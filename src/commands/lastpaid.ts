@@ -20,7 +20,7 @@ export class Command extends Commands.Command {
         this.definition
             .setFlag("token", "The name of the token", Joi.string().default("solar"))
             .setFlag("network", "The name of the network", Joi.string().valid(...Object.keys(Networks)))
-            .setFlag("all", "list involved allocations", Joi.boolean().default(false))
+            .setFlag("all", "List involved allocations", Joi.boolean().default(false))
             .setFlag("format", "Display output as standard, formatted JSON or raw", Joi.string().valid("std", "json", "raw").default("std"))
             .setFlag("json", "Short for format=\"all\". Overrides --format.", Joi.boolean().default(false))
             .setFlag("raw", "Short for format=\"raw\". Overrides --format and --json", Joi.boolean().default(false));

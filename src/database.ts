@@ -1,7 +1,7 @@
 import { Constants, Managers, Networks, Types, Utils } from "@solar-network/crypto";
 import { Container, Contracts } from "@solar-network/kernel";
 import SQLite3 from "better-sqlite3";
-import { IAllocation, IBill, IForgedBlock, PayeeTypes } from "./interfaces";
+import { IAllocation, IBill, IForgedBlock, IForgingStats, PayeeTypes } from "./interfaces";
 
 export const databaseSymbol = Symbol.for("LazyLedger<Database>");
 
@@ -173,27 +173,41 @@ export class Database {
     }
 
     // First of, last of and number of forged blocks between two dates,
-    public getRangeBounds(start: number, end: number, network?: Types.NetworkName): { forgedCount: number; firstForged: number; lastForged:number } {
+    public getForgingStatsForTimeRange(start: number, end: number, network?: Types.NetworkName): IForgingStats {
         if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
             Managers.configManager.setFromPreset(network!);
         } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         const result = this.database.prepare(
-           `SELECT COUNT(height) as forgedCount, MIN(height) as firstForged, MAX(height) as lastForged FROM forged_blocks fb 
+           `SELECT MIN(round) AS firstRound, MAX(round) AS lastRound, COUNT(round) AS roundCount,
+                   MIN(height) AS firstForged, MAX(height) AS lastForged, COUNT(height) AS forgedCount,
+                   SUM(reward) AS blockRewards, SUM(solfunds) AS blockFunds,
+                   SUM(fees) as blockFees, SUM(burnedFees) AS burnedFees,
+                   SUM(reward - solfunds) AS earnedRewards, SUM(fees - burnedFees) AS earnedFees,
+                   FLOOR(ROUND(AVG(validVotes),0)) AS avgVotes, AVG(voterCount) as avgVoterCount
+            FROM forged_blocks fb
             WHERE (${t0} + fb."timestamp") >= ${start}
               AND (${t0} + fb."timestamp") < ${end}`)
         .get();
+
+        result.blockRewards =  Utils.BigNumber.make(result.blockRewards);
+        result.blockFunds =  Utils.BigNumber.make(result.blockFunds);
+        result.blockFees =  Utils.BigNumber.make(result.blockFees);
+        result.burnedFees =  Utils.BigNumber.make(result.burnedFees);
+        result.earnedRewards =  Utils.BigNumber.make(result.earnedRewards);
+        result.earnedFees =  Utils.BigNumber.make(result.earnedFees);
+        result.avgVotes =  Utils.BigNumber.make(result.avgVotes);
         
         return result;
     }
 
-    public getVoterCommitment(start: number, end: number, network?: Types.NetworkName): {roundCount: number; blockCount: number; address: string; continuousVotes: number}[] {
+    public getVoterCommitment(start: number, end: number, network?: Types.NetworkName): {roundCount: number; blockCount: number; address: string; blocksVoteNotReduced: number; voteChanges?: number}[] {
         if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
             Managers.configManager.setFromPreset(network!);
         } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         const result = this.database.prepare(
-           `SELECT COUNT(fb.round) AS roundCount, COUNT(al.height) AS blockCount, al.address, SUM(CAST(al.validVote AS INTEGER) <= CAST(al.nextVote AS INTEGER)) AS continuousVotes 
+           `SELECT COUNT(fb.round) AS roundCount, COUNT(al.height) AS blockCount, al.address, SUM(CAST(al.validVote AS INTEGER) <= CAST(al.nextVote AS INTEGER)) AS blocksVoteNotReduced 
             FROM forged_blocks fb INNER JOIN (
                 SELECT height, address, validVote, lead(validVote,1,0) OVER (PARTITION BY address ORDER BY height) as nextVote
                 FROM allocations
