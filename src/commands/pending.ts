@@ -22,8 +22,8 @@ export class Command extends Commands.Command {
             .setFlag("network", "The name of the network", Joi.string().valid(...Object.keys(Networks)))
             // .setArgument("scope", "Result scope. due, current or all", Joi.string().valid("due", "current", "all"))
             .setFlag("format", "Display output as standard, formatted JSON or raw", Joi.string().valid("std", "json", "raw").default("std"))
-            .setFlag("json", "Short for format=\"all\". Overrides format.", Joi.boolean().default(false))
-            .setFlag("raw", "Short for format=\"raw\". Overrides format and json", Joi.boolean().default(false));
+            .setFlag("json", "Short for format=\"all\". Overrides --format.", Joi.boolean().default(false))
+            .setFlag("raw", "Short for format=\"raw\". Overrides --format and --json", Joi.boolean().default(false));
     }
 
     public async execute(): Promise<void> {
@@ -39,8 +39,8 @@ export class Command extends Commands.Command {
         //     return;
         // }
         
-        const format = this.getFlag("raw") ? "raw" : (this.getFlag("json") ? "json" : this.getFlag("format"));
         const data = sqlite.getPendingSimple();
+        const format = this.getFlag("raw") ? "raw" : (this.getFlag("json") ? "json" : this.getFlag("format"));
         this.components.log(`Retrieving pending allocations since last payment ...`);
         if (typeof data === undefined || data?.blockRewards === null) {
             console.log("nothing pending yet.")

@@ -22,7 +22,10 @@ export class Command extends Commands.Command {
             .setFlag("token", "The name of the token", Joi.string().default("solar"))
             .setFlag("network", "The name of the network", Joi.string().valid(...Object.keys(Networks)))
             .setFlag("height", "Block height. Last block if missing or 0.", Joi.number().integer().min(0))
-            .setFlag("round", "Round. Last round if missing or 0.", Joi.number().integer().min(0));
+            .setFlag("round", "Round. Last round if missing or 0.", Joi.number().integer().min(0))
+            .setFlag("format", "Display output as standard, formatted JSON or raw", Joi.string().valid("std", "json", "raw").default("std"))
+            .setFlag("json", "Short for format=\"all\". Overrides --format.", Joi.boolean().default(false))
+            .setFlag("raw", "Short for format=\"raw\". Overrides --format and --json", Joi.boolean().default(false));
     }
 
     public async execute(): Promise<void> {
@@ -40,7 +43,21 @@ export class Command extends Commands.Command {
             }
         }
         round ||= 0; // if still undefined set to 0
+        const format = this.getFlag("raw") ? "raw" : (this.getFlag("json") ? "json" : this.getFlag("format"));
         this.components.log(`Retrieving data from ${round > 0 ? "forged round: " + round : "last forged round"} ...`);
-        sqlite.getLedgerAtRound(round).forEach( item => console.log(item) );
+        const data = sqlite.getLedgerAtRound(round);
+        switch (format) {
+            case "raw": {
+                data.forEach(item => console.log(item));
+                break;
+            }
+            case "json": {
+                data.forEach(item => console.log(JSON.stringify(item, null, 4)))
+                break;
+            }
+            default: {
+                data.forEach(item => console.table(item));
+            }
+        }
     }
 }

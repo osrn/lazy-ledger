@@ -14,7 +14,7 @@ export class Command extends Commands.Command {
 
     public signature: string = "ll:commitment";
 
-    public description: string = "Show voter commitment (continuous blocks voting balance not reduced) during a time frame";
+    public description: string = "Show voter commitment (voting balance not reduced) during a time frame";
 
     public configure(): void {
         this.definition
@@ -48,7 +48,7 @@ export class Command extends Commands.Command {
 
         this.components.log("voter commitment during the range is:")
         const voterCommitment = sqlite.getVoterCommitment(start, end, network);
-        voterCommitment.forEach( al => console.log(al));
+        voterCommitment.forEach(item => console.log(item));
         console.log();
 
         this.components.log(`Committed addresses during the range, and respective valid voting balances at the beginning of the range (height ${range.firstForged}) are:`);        
@@ -56,8 +56,8 @@ export class Command extends Commands.Command {
         const addresses = voterCommitment.filter(al => al.continuousVotes === al.blockCount).map(al => al.address);
         // List committed voter addresses and valid voting balances at first block of the range
         sqlite.getVoterAllocationAtHeight(range.firstForged)
-              .filter( al => addresses.includes(al.address) && !al.validVote.isZero())
-              .sort( (n1,n2) => n1.address >= n2.address ? 1:-1 ) // not care about equal strings as they are sorted already:
-              .forEach( al => console.log(al.address, al.validVote.toFixed()));
+              .filter(item => addresses.includes(item.address) && !item.validVote.isZero())
+              .sort((n1,n2) => n1.address >= n2.address ? 1:-1 ) // not care about equal strings as they are sorted already:
+              .forEach(item => console.log(item.address, item.validVote.toFixed()));
 }
 }
