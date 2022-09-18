@@ -179,8 +179,20 @@ Payment plans follows a milestone principle: higher index properties override th
 Configure, then restart relay. First time sync may take ~15+mins depending on the node capacity and how far back your first non-zero allocation plan's height goes.
 
 ## CLI
-**`solar ll:alloc [--round m] [--height n]`**<br>
-shows the block allocation at given round or height; former having priority over the latter. Last round if arguments skipped.
+List of Lazy-Ledger commands can be viewed with `solar help`.<br>
+Help specific to a command can be displayed with `solar ll:<command> --help`.
+<br><br>
+
+**`solar ll:alloc [--round m | --height n] [--raw | --json | --format="std | json | raw"]`**<br>
+shows the block allocation at given round or height; former having priority over the latter if both provided. Last round if arguments skipped.
+```
+Flags
+--height     Block height. Last block if missing or 0.
+--round      Round. Last round if missing or 0.
+--format     Display output as standard, formatted JSON or raw
+--json       Short for format="json". Overrides --format
+--raw        Short for format="raw". Overrides --format and --json
+```
 ```bash
 Retrieving data from last block ...
 [
@@ -211,11 +223,18 @@ Retrieving data from last block ...
 ]
 ```
 ---
-**`solar ll:lastpaid [--all]`**<br>
-shows the last paid allocations - summary if flag skipped.
+**`solar ll:lastpaid [--all] [--raw | --json | --format="std | json | raw"]`**<br>
+shows summary|detail info about the last paid forged-block allocation - summary if flag skipped.
+```
+Flags 
+--all        list involved allocations.
+--format     Display output as standard, formatted JSON or raw
+--json       Short for format="json". Overrides --format
+--raw        Short for format="raw". Overrides --format and --json
+```
 ```bash
 solar ll:lastpaid
-Retrieving data for the last paid allocation ...
+Retrieving info about the last paid forged-block allocation ...
 {
   round: 24583,
   height: 1302858,
@@ -224,69 +243,88 @@ Retrieving data for the last paid allocation ...
 }
 ```
 ---
-**`solar ll:commitment --start <datetime> --end <datetime>`**<br>
-shows voter commitment (continuous blocks voting balance not reduced) during a time frame
+**`solar ll:pending [--raw | --json | --format="std | json | raw"]`**<br>
+shows pending (=unpaid) allocations since last payment.
 ```
-solar ll:commitment --start 2022-09-01 --end 2022-09-08
-Range contains 1425 blocks and bounds are:
-(date)     : [Thu Sep 01 2022 00:00:00 GMT+0000 (Coordinated Universal Time), Thu Sep 08 2022 00:00:00 GMT+0000 (Coordinated Universal Time))
-(unixstamp): [1661990400, 1662595200)
-(height)   : [1231808, 1306472]
+Flags:
+--format     Display output as standard, formatted JSON or raw
+--json       Short for format="json". Overrides --format
+--raw        Short for format="raw". Overrides --format and --json
+```
+```bash
+solar ll:pending
+Retrieving pending allocations since last payment ...
+┌───────────────┬─────────────┐
+│    (index)    │   Values    │
+├───────────────┼─────────────┤
+│   minRound    │      1      │
+│   maxRound    │    1429     │
+│    rounds     │    1430     │
+│   minHeight   │     45      │
+│   maxHeight   │    75726    │
+│    blocks     │    1430     │
+│ blockRewards  │  16817.375  │
+│  blockFunds   │  840.36875  │
+│   blockFees   │      0      │
+│  burnedFees   │      0      │
+│ earnedRewards │ 15977.00625 │
+│  earnedFees   │      0      │
+└───────────────┴─────────────┘
+```
+---
+**`solar ll:commitment --start <datetime> --end <datetime> [-v]`**<br>
+shows voter commitment (voting balance not reduced) during a time frame
+```
+Flags
+--start      Start date (YYYY-MM-DDTHH:mm:ss.sssZ | YYYY-MM-DDTHH:mm:ss.sss+-hh:mm), included.
+--end        End date (YYYY-MM-DDTHH:mm:ss.sssZ | YYYY-MM-DDTHH:mm:ss.sss+-hh:mm), excluded.
+--v          Show detailed information for each voter```
+```
+```
+solar ll:commitment --start=2022-09-16T18:00:00Z --end=2022-09-18 -v
+(LL) Opening database connection @ /home/solar/.local/share/solar-core/testnet/lazy-ledger.sqlite
+Range contains 255 blocks and bounds are:
+[date)     : [Fri Sep 16 2022 21:00:00 GMT+0300 (GMT+03:00), Sun Sep 18 2022 03:00:00 GMT+0300 (GMT+03:00))
+[unixstamp): [1663351200, 1663459200)
+[round]    : [1704, 1958]
+[height]   : [90311, 103743]
 
-voter commitment during the range is:
-[
-  {
-    roundCount: 1425,
-    blockCount: 1425,
-    address: 'D646b6dx3sW5NAgMDTKAZ2hdC57K1BeRaK',
-    continuousVotes: 1422
-  },
-  {
-    roundCount: 1425,
-    blockCount: 1425,
-    address: 'D7ECQsnQkEgofZHyyC4kftAPTZxMLjHwHK',
-    continuousVotes: 1423
-  },
-  {
-    roundCount: 1425,
-    blockCount: 1425,
-    address: 'DA8txf4Pt3WE9c1Jth2TjeXUyicfiKUmkE',
-    continuousVotes: 1425
-  },
-  {
-    roundCount: 1425,
-    blockCount: 1425,
-    address: 'DAj5756Vb9UzQvLqeegkyVsgrH5cUJZ1tg',
-    continuousVotes: 1425
-  },
-  {
-    roundCount: 1425,
-    blockCount: 1425,
-    address: 'DHhKUBifRu4BGdznw48pGnWEwaywxozKSZ',
-    continuousVotes: 1425
-  },
-  {
-    roundCount: 1425,
-    blockCount: 1425,
-    address: 'DNyVmc4kioYEXkA37Pn9KF3ioY99VFDoAF',
-    continuousVotes: 1420
-  },
-  {
-    roundCount: 1425,
-    blockCount: 1425,
-    address: 'DTHPEZSTsL9Lz7dK6KmdNwEwTSXBJrqdkQ',
-    continuousVotes: 1311
-  }
-]
+Forging stats over the range are:
+Rewards    : 2549.0
+Funds      : 254.90000000
+Fees       : 0.0
+Burned fees: 0.0
+Earned rwds: 2294.10000000
+Earned fees: 0.0
+Votes (avg): 9842471.67608968
+Voters(avg): 2
 
-Committed addresses during the range, and respective valid voting balances at the beginning of the range (height 1231808) are:
-DA8txf4Pt3WE9c1Jth2TjeXUyicfiKUmkE 9770539979
-DAj5756Vb9UzQvLqeegkyVsgrH5cUJZ1tg 12330839313158
-DHhKUBifRu4BGdznw48pGnWEwaywxozKSZ 0
+Committed addresses over the range - with respective valid voting balances at the beginning of the range (height 90311) - are:
+DNrxmrPcZrcRgv9ZbR1N5iTyeVJbE5Ukqc 1032347894645
+
+Voters and commitment details:
+{
+  roundCount: 255,
+  blockCount: 255,
+  address: 'DNrxmrPcZrcRgv9ZbR1N5iTyeVJbE5Ukqc',
+  blocksVoteNotReduced: 255,
+  voteChanges: 0
+}
+{
+  roundCount: 255,
+  blockCount: 255,
+  address: 'DTEBVe6YqNoAy1DJzzcToiRnsapN7WUJk7',
+  blocksVoteNotReduced: 225,
+  voteChanges: 30
+}
 ```
 ---
 **`solar ll:rollback <height>`**<br>
 deletes all records starting with (and including) the first block of the round for the given height.
+```
+Arguments             
+height    Block height
+```
 ```bash
 solar ll:rollback 100000
 ✔ This will remove all records in LL database STARTING WITH & INCLUDING height 99959 which is the first block of the round 1887 and is irreversible. Are you sure? › (y/N)
@@ -346,6 +384,7 @@ then compare `balance|orgBalance`, `votePercent|orgVotePercent` and `vote|validV
 You are welcome to make any other accuracy checks by direct database query.
 
 ## Version Info
+- Release 0.0.8 - requires `@solar-network/: ^4.1.2 || ^4.1.2-next.0`
 - Release 0.0.5 - requires `@solar-network/: ^4.1.0 || ^4.1.0-next.5`
 ## Roadmap
 Not necessarily in this order;

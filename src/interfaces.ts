@@ -78,6 +78,23 @@ export interface IAllocation {
     settled: number;                // unix timestamp transaction forged 
 }
 
+export interface IForgingStats {
+    firstRound: number;
+    lastRound: number;
+    roundCount: number;
+    firstForged: number; 
+    lastForged:number;
+    forgedCount: number; 
+    blockRewards: Utils.BigNumber;
+    blockFunds: Utils.BigNumber;
+    blockFees: Utils.BigNumber;
+    burnedFees: Utils.BigNumber;
+    earnedRewards: Utils.BigNumber;
+    earnedFees: Utils.BigNumber;
+    avgVotes: Utils.BigNumber;
+    avgVoterCount: number;
+}
+
 export enum PayeeTypes {
     reserve = 0,
     voter,
@@ -93,4 +110,10 @@ export interface IBill {
     address: string, 
     duration: number, 
     allotment: string 
-};
+}
+
+export enum PendingTypes {
+    due = 0,
+    current,
+    all
+}

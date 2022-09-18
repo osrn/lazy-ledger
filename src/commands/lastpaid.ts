@@ -14,13 +14,16 @@ export class Command extends Commands.Command {
 
     public signature: string = "ll:lastpaid";
 
-    public description: string = "Show last paid allocation summary|detail";
+    public description: string = "Show summary|detail info about the last paid forged-block allocation";
 
     public configure(): void {
         this.definition
             .setFlag("token", "The name of the token", Joi.string().default("solar"))
             .setFlag("network", "The name of the network", Joi.string().valid(...Object.keys(Networks)))
-            .setFlag("all", "all for showing all allocations individually", Joi.boolean().default(false));
+            .setFlag("all", "List involved allocations", Joi.boolean().default(false))
+            .setFlag("format", "Display output as standard, formatted JSON or raw", Joi.string().valid("std", "json", "raw").default("std"))
+            .setFlag("json", "Short for format=\"all\". Overrides --format.", Joi.boolean().default(false))
+            .setFlag("raw", "Short for format=\"raw\". Overrides --format and --json", Joi.boolean().default(false));
     }
 
     public async execute(): Promise<void> {
@@ -31,12 +34,38 @@ export class Command extends Commands.Command {
         const sqlite = new Database();
         sqlite.init(this.app.getCorePath("data"));
         const flag_all = this.getFlag("all");
-        this.components.log(`Retrieving data for the last paid allocation ...`);
-        if (!flag_all) {
-            console.log(sqlite.getLastPaidSummary());
+        const format = this.getFlag("raw") ? "raw" : (this.getFlag("json") ? "json" : this.getFlag("format"));
+        
+        this.components.log(`Retrieving info about the last paid forged-block allocation ...`);
+        const data = sqlite.getLastPaidSummary();
+        switch (format) {
+            case "raw": {
+                console.log(data);
+                break;
+            }
+            case "json": {
+                console.log(JSON.stringify(data, null, 4))
+                break;
+            }
+            default: {
+                console.table(data);
+            }
         }
-        else {
-            sqlite.getLastPaidVoterAllocation().forEach( item => console.log(item) );
+        if (flag_all) {
+            const data = sqlite.getLastPaidVoterAllocation();
+            switch (format) {
+                case "raw": {
+                    data.forEach(item => console.log(item));
+                    break;
+                }
+                case "json": {
+                    data.forEach(item => console.log(JSON.stringify(item, null, 4)))
+                    break;
+                }
+                default: {
+                    data.forEach(item => console.table(item));
+                }
+            }
         }
     }
 }

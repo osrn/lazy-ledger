@@ -1,7 +1,7 @@
 import { Constants, Managers, Networks, Types, Utils } from "@solar-network/crypto";
 import { Container, Contracts } from "@solar-network/kernel";
 import SQLite3 from "better-sqlite3";
-import { IAllocation, IBill, IForgedBlock, PayeeTypes } from "./interfaces";
+import { IAllocation, IBill, IForgedBlock, IForgingStats, PayeeTypes } from "./interfaces";
 
 export const databaseSymbol = Symbol.for("LazyLedger<Database>");
 
@@ -111,8 +111,8 @@ export class Database {
     }
 
     public getAllVotersLastAllocation(height: number = 0): IAllocation[] {
-        const result = this.database
-            .prepare(`SELECT m.* FROM allocations m INNER JOIN (
+        const result = this.database.prepare(
+           `SELECT m.* FROM allocations m INNER JOIN (
                 SELECT address, MAX(height) as height from allocations
                 WHERE payeeType = 1
                 GROUP BY address
@@ -121,7 +121,7 @@ export class Database {
             AND m.height = g.height
             WHERE payeeType = 1
             ORDER by m.height ASC`)
-            .all();
+        .all();
         
         (result as unknown as IAllocation[]).forEach(r => { 
             r.balance = Utils.BigNumber.make(r.balance);
@@ -173,27 +173,41 @@ export class Database {
     }
 
     // First of, last of and number of forged blocks between two dates,
-    public getRangeBounds(start: number, end: number, network?: Types.NetworkName): { forgedBlock: number; firstForged: number; lastForged:number } {
+    public getForgingStatsForTimeRange(start: number, end: number, network?: Types.NetworkName): IForgingStats {
         if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
             Managers.configManager.setFromPreset(network!);
         } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         const result = this.database.prepare(
-           `SELECT COUNT(height) as forgedBlock, MIN(height) as firstForged, MAX(height) as lastForged FROM forged_blocks fb 
+           `SELECT MIN(round) AS firstRound, MAX(round) AS lastRound, COUNT(round) AS roundCount,
+                   MIN(height) AS firstForged, MAX(height) AS lastForged, COUNT(height) AS forgedCount,
+                   SUM(reward) AS blockRewards, SUM(solfunds) AS blockFunds,
+                   SUM(fees) as blockFees, SUM(burnedFees) AS burnedFees,
+                   SUM(reward - solfunds) AS earnedRewards, SUM(fees - burnedFees) AS earnedFees,
+                   FLOOR(ROUND(AVG(validVotes),0)) AS avgVotes, AVG(voterCount) as avgVoterCount
+            FROM forged_blocks fb
             WHERE (${t0} + fb."timestamp") >= ${start}
               AND (${t0} + fb."timestamp") < ${end}`)
         .get();
+
+        result.blockRewards =  Utils.BigNumber.make(result.blockRewards);
+        result.blockFunds =  Utils.BigNumber.make(result.blockFunds);
+        result.blockFees =  Utils.BigNumber.make(result.blockFees);
+        result.burnedFees =  Utils.BigNumber.make(result.burnedFees);
+        result.earnedRewards =  Utils.BigNumber.make(result.earnedRewards);
+        result.earnedFees =  Utils.BigNumber.make(result.earnedFees);
+        result.avgVotes =  Utils.BigNumber.make(result.avgVotes);
         
         return result;
     }
 
-    public getVoterCommitment(start: number, end: number, network?: Types.NetworkName): any {
+    public getVoterCommitment(start: number, end: number, network?: Types.NetworkName): {roundCount: number; blockCount: number; address: string; blocksVoteNotReduced: number; voteChanges?: number}[] {
         if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
             Managers.configManager.setFromPreset(network!);
         } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         const result = this.database.prepare(
-           `SELECT COUNT(fb.round) AS roundCount, COUNT(al.height) AS blockCount, al.address, SUM(al.validVote <= al.nextVote) AS continuousVotes 
+           `SELECT COUNT(fb.round) AS roundCount, COUNT(al.height) AS blockCount, al.address, SUM(CAST(al.validVote AS INTEGER) <= CAST(al.nextVote AS INTEGER)) AS blocksVoteNotReduced 
             FROM forged_blocks fb INNER JOIN (
                 SELECT height, address, validVote, lead(validVote,1,0) OVER (PARTITION BY address ORDER BY height) as nextVote
                 FROM allocations
@@ -205,32 +219,7 @@ export class Database {
               AND (${t0} + fb."timestamp") < ${end}
             GROUP BY al.address`)
         .all();
-        
-        return result;
-    }
 
-    public getCommittedVoterAddresses(start: number, end: number, network?: Types.NetworkName): { address: string } [] {
-        if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
-            Managers.configManager.setFromPreset(network!);
-        } 
-        const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
-        const result = this.database.prepare(
-           `SELECT address FROM (
-                SELECT COUNT(fb.round) AS roundCount, COUNT(al.height) AS blockCount, al.address, SUM(al.validVote <= al.nextVote) AS continuousVotes 
-                FROM forged_blocks fb INNER JOIN (
-                    SELECT height, address, validVote, lead(validVote,1,0) OVER (PARTITION BY address ORDER BY height) as nextVote
-                    FROM allocations
-                    WHERE payeeType = 1
-                    AND votePercent > 0
-                ) AS al 
-                ON fb.height = al.height
-                WHERE (${t0} + fb."timestamp") >= ${start}
-                AND (${t0} + fb."timestamp") < ${end}
-                GROUP BY al.address
-            ) AS vs 
-            WHERE continuousVotes = blockCount`)
-        .all();
-        
         return result;
     }
 
@@ -253,6 +242,80 @@ export class Database {
         }
         return result;
     }
+
+    public getPendingSimple(): any {
+        let fromHeight = this.getLastPaidSummary()?.height;
+
+        if (!fromHeight) {
+            fromHeight = this.database
+                .prepare("SELECT MIN(height) FROM allocations WHERE allotment > 0 ORDER BY height LIMIT 1")
+                .pluck()
+                .get();
+        }
+
+        if (typeof fromHeight === undefined) {
+            return undefined;
+        }
+
+        const result = this.database.prepare(
+           `SELECT MIN(round) AS minRound, MAX(round) AS maxRound, COUNT(round) AS rounds, 
+	               MIN(height) AS minHeight, MAX(height) AS maxHeight, COUNT(height) AS blocks, 
+	               ROUND(SUM(reward),8) AS blockRewards, ROUND(SUM(solfunds),8) AS blockFunds, 
+	               ROUND(SUM(fees),8) as blockFees, ROUND(SUM(burnedFees),8) AS burnedFees, 
+	               ROUND(SUM(earnedRewards),8) AS earnedRewards, ROUND(SUM(earnedFees),8) AS earnedFees
+            FROM forged_blocks_human fbh 
+            WHERE height > ${fromHeight}`)
+        .get();
+
+        //console.log(`(LL) query to run:\n ${sqlstr}`);
+        return result;
+    }
+
+    // public getPending(period: number, offset: number, scope: PendingTypes, network?: Types.NetworkName): any {
+    //     if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
+    //         Managers.configManager.setFromPreset(network!);
+    //     } 
+    //     const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
+    //     const now = new Date();
+
+    //     // Amount to be retrieved is;
+    //     //  -- all pending up until last payment period if PendingType.due
+    //     //  -- all pending from last payment period to now if PendingType.current
+    //     //  -- anything pending
+    //     period ||= 24; // prevent div/0 against period=0 leakage
+    //     if (scope === PendingTypes.due || scope === PendingTypes.current) {
+    //         // TODO: Handle case period > 24
+
+    //         // find when the current payment slot ended to exclude blocks forged after that
+    //         // (e.g. until 06:59:59 if offset is 3 and payperiod is 4) where q would be 2 of 6
+    //         now.setUTCHours(now.getUTCHours() - ((now.getUTCHours() - offset) % period), 0, 0, 0)
+    //     }
+    //     // cutoff time is current time only with PendingTypes.all
+    //     const cutoffts = Math.floor(now.getTime() / 1000)
+    //     const bracket = (scope === PendingTypes.current) ? ">" : "<";
+
+    //     const result = this.database.prepare(
+    //        `SELECT MIN(round) AS minRound, MAX(round) AS maxRound, COUNT(round) AS rounds, 
+	//                MIN(height) AS minHeight, MAX(height) AS maxHeight, COUNT(height) AS blocks, 
+	//                SUM(reward) AS blockRewards, SUM(solfunds) AS blockFunds, 
+	//                SUM(fees) as blockFees, SUM(burnedFees) AS burnedFees, 
+	//                SUM(earnedRewards) AS earnedRewards, SUM(earnedFees) AS earnedFees
+    //         FROM forged_blocks_human fbh 
+    //         -- As unpaid allocations may span intermittent block ranges, 
+    //         -- we just cannot sum a fixed range of blocks to find due amount.
+    //         -- Thus, match against a filtered list
+    //         WHERE height IN (
+    //         	SELECT DISTINCT al.height
+	//             FROM allocations al INNER JOIN (SELECT height, ${t0} + timestamp as rts FROM forged_blocks) AS fb
+	//             ON al.height = fb.height 
+	//             WHERE al.allotment > 0 
+	//             AND al.transactionId = ''
+	//             AND fb.rts ${bracket} ${cutoffts})`)
+    //     .all();
+
+    //     //console.log(`(LL) query to run:\n ${sqlstr}`);
+    //     return result;
+    // }
 
     public getBill(period: number, offset: number, now: Date): IBill[] {
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
@@ -285,7 +348,7 @@ export class Database {
               al.address, al.payeeType, al.allotment
             FROM (
                 SELECT height, address, payeeType, allotment FROM allocations
-                WHERE allotment > 0 AND transactionId = '') al
+                WHERE allotment > 0 AND transactionId = '' AND settled = 0) al
             LEFT JOIN (
               -- shift epochstamp with epoch and payment time offset
               SELECT height, ${t0} + timestamp - ( ${offset} * 60 * 60 ) AS ts, ${t0} + timestamp as rts
@@ -330,6 +393,7 @@ export class Database {
         WHERE allocations.height = fb.height
             AND transactionId = ''
             AND allotment > 0
+            AND settled = 0
             AND fb.ts < ${until}
             AND strftime('%Y', fb.ts, 'unixepoch') = '${y}'
             AND strftime('%m', fb.ts, 'unixepoch') = '${m}'
@@ -358,7 +422,7 @@ export class Database {
     }
 
     public settleAllocation(txid: string, timestamp: number): SQLite3.RunResult {
-        const sqlstr = `UPDATE allocations SET settled = ${timestamp} WHERE transactionId = '${txid}'`;
+        const sqlstr = `UPDATE allocations SET settled = ${timestamp} WHERE transactionId = '${txid}' AND settled = 0`;
 
         //console.log(`(LL) query to run:\n ${sqlstr}`);
         const result: SQLite3.RunResult = this.database

@@ -353,7 +353,7 @@ export class Processor {
             const missedBlocks: IMissedBlock[] = [];
             const allocations: IAllocation[] = [];
 
-            const tick0 = Date.now();
+            // const tick0 = Date.now();
             const block: Interfaces.IBlockData = blocks[blockCounter];
             // console.log(JSON.stringify(block,null,4));
             const round = AppUtils.roundCalculator.calculateRound(block.height);
@@ -485,9 +485,9 @@ export class Processor {
                 });
             }
             //console.log(`(LL) allocations after voters\n${JSON.stringify(allocations)}`);
-            if (this.isInitialSync()) {
-                this.logger.debug(`(LL) block processed in ${this.msToHuman(Date.now() - tick0)}`)
-            }
+            // if (this.isInitialSync()) {
+            //     this.logger.debug(`(LL) block processed in ${this.msToHuman(Date.now() - tick0)}`);
+            // }
             this.sqlite.insert(forgedBlocks, missedBlocks, allocations);
             this.lastStoredBlockHeight = block.height;
         }
