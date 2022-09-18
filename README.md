@@ -179,6 +179,10 @@ Payment plans follows a milestone principle: higher index properties override th
 Configure, then restart relay. First time sync may take ~15+mins depending on the node capacity and how far back your first non-zero allocation plan's height goes.
 
 ## CLI
+List of Lazy-Ledger commands can be viewed with `solar help`.<br>
+Help specific to a command can be displayed with `solar ll:<command> --help`.
+<br><br>
+
 **`solar ll:alloc [--round m | --height n] [--raw | --json | --format="std | json | raw"]`**<br>
 shows the block allocation at given round or height; former having priority over the latter if both provided. Last round if arguments skipped.
 ```
@@ -380,6 +384,7 @@ then compare `balance|orgBalance`, `votePercent|orgVotePercent` and `vote|validV
 You are welcome to make any other accuracy checks by direct database query.
 
 ## Version Info
+- Release 0.0.8 - requires `@solar-network/: ^4.1.2 || ^4.1.2-next.0`
 - Release 0.0.5 - requires `@solar-network/: ^4.1.0 || ^4.1.0-next.5`
 ## Roadmap
 Not necessarily in this order;
