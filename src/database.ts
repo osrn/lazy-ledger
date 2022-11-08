@@ -174,7 +174,7 @@ export class Database {
 
     // First of, last of and number of forged blocks between two dates,
     public getForgingStatsForTimeRange(start: number, end: number, network?: Types.NetworkName): IForgingStats {
-        if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
+        if (typeof network !== "undefined" && Object.keys(Networks).includes(network!)) {
             Managers.configManager.setFromPreset(network!);
         } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
@@ -202,7 +202,7 @@ export class Database {
     }
 
     public getVoterCommitment(start: number, end: number, network?: Types.NetworkName): {roundCount: number; blockCount: number; address: string; blocksVoteNotReduced: number; voteChanges?: number}[] {
-        if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
+        if (typeof network !== "undefined" && Object.keys(Networks).includes(network!)) {
             Managers.configManager.setFromPreset(network!);
         } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
@@ -253,7 +253,7 @@ export class Database {
                 .get();
         }
 
-        if (typeof fromHeight === undefined) {
+        if (typeof fromHeight === "undefined") {
             return undefined;
         }
 
@@ -272,7 +272,7 @@ export class Database {
     }
 
     // public getPending(period: number, offset: number, scope: PendingTypes, network?: Types.NetworkName): any {
-    //     if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
+    //     if (typeof network !== "undefined" && Object.keys(Networks).includes(network!)) {
     //         Managers.configManager.setFromPreset(network!);
     //     } 
     //     const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
