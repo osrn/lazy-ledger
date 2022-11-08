@@ -1,6 +1,6 @@
 // import { Constants, Utils } from "@solar-network/crypto";
 
-// Deprecated. User @solar-crypto/Utils/formatSatoshi instead
+// Deprecated. Use @solar-crypto/Utils/formatSatoshi instead
 // export function toSXP(from: Utils.BigNumber): string {
 //     const integral = from.dividedBy(Constants.SATOSHI);
 //     let fraction = from.minus(integral.times(Constants.SATOSHI));

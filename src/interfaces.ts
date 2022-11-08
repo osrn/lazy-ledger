@@ -102,13 +102,13 @@ export enum PayeeTypes {
 }
 
 export interface IBill { 
+    rowid: number;
     y: string, 
     m: string, 
     d: string, 
     q: number, 
     payeeType: number, 
     address: string, 
-    duration: number, 
     allotment: string 
 }
 

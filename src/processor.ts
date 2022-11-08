@@ -149,9 +149,9 @@ export class Processor {
         for (const txid of this.txWatchPool) {
             const forgedTx = await this.transactionRepository.transactionRepository.findById(txid);
             if ( forgedTx ) {
-                if (this.sqlite.settleAllocation(txid, AppUtils.formatTimestamp(forgedTx.timestamp).unix).changes > 0) {
-                    this.txWatchPool.delete(txid!);
-                }
+                const queryResult = await this.sqlite.settleAllocation(txid, AppUtils.formatTimestamp(forgedTx.timestamp).unix);
+                this.logger.debug(`(LL) Stamped ${queryResult.changes} allocations having txid ${txid} as settled`)
+                this.txWatchPool.delete(txid!);
             }
             else {
                 this.logger.critical(`(LL) Detected an unsettled allocation marked with an invalid tx ${txid}`);
@@ -219,11 +219,12 @@ export class Processor {
 
                     // If the transaction is in the watch list, mark the allocation payment as settled
                     if (this.txWatchPool.has(txData.id!)) {
-                        this.logger.debug(`(LL) Received a transaction applied event ${data.id} which is in the watchlist`)
+                        this.logger.debug(`(LL) Received a transaction applied event with txid ${txData.id} which is in the watchlist`)
 
                         // Transactions v2 and v3 no longer has a timetamp. Get it from the block it was forged in
-                        if (txBlock && this.sqlite.settleAllocation(txData.id!, AppUtils.formatTimestamp(txBlock.timestamp).unix).changes > 0) {
-                            this.logger.debug(`(LL) Marked allocations with txid ${data.id} as settled`)
+                        if (txBlock) {
+                            const queryResult = await this.sqlite.settleAllocation(txData.id!, AppUtils.formatTimestamp(txBlock.timestamp).unix);
+                            this.logger.debug(`(LL) Stamped ${queryResult.changes} allocations having txid ${txData.id} as settled`)
                             this.txWatchPool.delete(txData.id!);
                         }
                     }
@@ -334,11 +335,12 @@ export class Processor {
         this.events.listen(AppEnums.TransactionEvent.Reverted, {
             handle: async ({ data }) => {
                 // TODO: Do not process if plan at height has payperiod=0, meaning plugin provides database only, payment is handled externally
-                this.logger.debug(`(LL) Received transaction reverted event with id ${data.id}`);
+                this.logger.debug(`(LL) Received transaction reverted event with txid ${data.id}`);
 
                 // Hopefully not many TX reverted events will occur, since the query needs to be executed for each and every one
                 // Alternative: keep another watchlist; but it could be more expensive then SQL
-                (this.sqlite.clearTransactionId(data.id).changes > 0);
+                const { changes } = await this.sqlite.clearTransactionId(data.id);
+                this.logger.debug(`(LL) Cleared txid ${data.id} from ${changes} allocations`);
             },
         });
     }
