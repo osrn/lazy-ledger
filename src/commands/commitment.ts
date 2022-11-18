@@ -1,9 +1,8 @@
 import { Commands, Container } from "@solar-network/cli";
 import { ProcessManager } from "@solar-network/cli/dist/services";
-import { Networks } from "@solar-network/crypto";
+import { Networks, Utils } from "@solar-network/crypto";
 import Joi from "joi";
 import { Database } from "../database";
-import { toSXP } from "../utils";
 
 @Container.injectable()
 export class Command extends Commands.Command {
@@ -49,13 +48,13 @@ export class Command extends Commands.Command {
 [round]    : [${range.firstRound}, ${range.lastRound}]
 [height]   : [${range.firstForged}, ${range.lastForged}]\n
 Forging stats over the range are:
-Rewards    : ${toSXP(range.blockRewards)}
-Funds      : ${toSXP(range.blockFunds)}
-Fees       : ${toSXP(range.blockFees)}
-Burned fees: ${toSXP(range.burnedFees)}
-Earned rwds: ${toSXP(range.earnedRewards)}
-Earned fees: ${toSXP(range.earnedFees)}
-Votes (avg): ${toSXP(range.avgVotes)}
+Rewards    : ${Utils.formatSatoshi(range.blockRewards)}
+Funds      : ${Utils.formatSatoshi(range.blockFunds)}
+Fees       : ${Utils.formatSatoshi(range.blockFees)}
+Burned fees: ${Utils.formatSatoshi(range.burnedFees)}
+Earned rwds: ${Utils.formatSatoshi(range.earnedRewards)}
+Earned fees: ${Utils.formatSatoshi(range.earnedFees)}
+Votes (avg): ${Utils.formatSatoshi(range.avgVotes)}
 Voters(avg): ${range.avgVoterCount}\n`);
 
         const voterCommitment = sqlite.getVoterCommitment(start, end, network);

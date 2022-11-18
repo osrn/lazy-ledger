@@ -11,6 +11,12 @@ import delay from "delay";
 
 export const tellerSymbol = Symbol.for("LazyLedger<Teller>");
 
+// Destructure object to retrieve only needed properties
+const unpack = ({y, m, d, q, payeeType, address}) => ({y, m, d, q, payeeType, address});
+// flatten object values to construct a comparable string
+const flatten = (obj) => (Object.values(obj).reduce((prev, curr) => prev + (prev === '' ? '' : ':') + String(curr), '' ));
+
+
 @Container.injectable()
 export class Teller{
     @Container.inject(Container.Identifiers.Application)
@@ -113,34 +119,37 @@ export class Teller{
         const plan = this.configHelper.getPresentPlan();
         plan.payperiod ||= 24; // prevent div/0 if payperiod=0 with postInitInstantPay=true
 
-        // Fetch the bill from local db
-        const bill: IBill[] = this.sqlite.getBill(plan.payperiod, plan.payoffset, now);
-        this.logger.debug(`(LL) Fetched ${bill.length} bill items from the database`);
+        // Filter out delegate address in allocations query?
+        const exclude: string | undefined = this.configHelper.getConfig().excludeSelfFrTx ? this.configHelper.getConfig().delegateAddress : undefined;
+        // Fetch the allocations from local db
+        const bill: IBill[] = this.sqlite.getBill(plan.payperiod, plan.payoffset, now, exclude);
+        this.logger.debug(`(LL) Fetched ${bill.length} allocations from the database`);
+        // this.logger.debug(`(LL) trace: bill:IBill[]=\n${JSON.stringify(bill, null, 4)}`);
+
         if (bill.length == 0) {
             this.logger.debug(`(LL) Teller run complete. Next run is ${this.cronJob && this.cronJob.nextDates().toISOString()}`);
             return [];
         }
         
-        let pay_order = [...bill]; //work on a clone as original will be needed in later versions.
-
-        // Filter out delegate address if configured so
-        if (this.configHelper.getConfig().excludeSelfFrTx) {
-            pay_order = pay_order.filter( i => i.address !== this.configHelper.getConfig().delegateAddress);
-            this.logger.debug(`(LL) Bill reduced to ${pay_order.length} items after filtering out delegate address`);
-        }
+        let pay_order = [...bill]; //work on a clone
+        // pivot sum
+        pay_order = this.objArrayPivotSum(pay_order, ['y', 'm', 'd', 'q', 'payeeType', 'address'], ['allotment']) as IBill[];
+        this.logger.debug(`(LL) Allocations summarized to ${pay_order.length} bill items after pivoting by pay-period, type and address`);
+        // this.logger.debug(`(LL) trace: after pivot sum, pay_order:IBill[]=\n${JSON.stringify(pay_order, null, 4)}`);
 
         let pay_orders: IBill[][] = [];
 
         if (this.configHelper.getConfig().mergeAddrsInTx) {
             // consolidate the addresses together into a summarized distinct array
-            pay_orders.push(this.objArrayPivotSum(pay_order, ['address'], ['duration', 'allotment']) as IBill[]);
-            this.logger.debug(`(LL) Bill produced ${pay_order.length > 0 ? 1 : 0} pay-order of ${pay_orders[0].length} items after pivot sum by address`);
+            pay_orders.push(this.objArrayPivotSum(pay_order, ['address'], ['allotment']) as IBill[]);
+            this.logger.debug(`(LL) Bill items produced ${pay_order.length > 0 ? 1 : 0} pay-order of ${pay_orders[0]?.length} items after consolidating on address`);
         }
         else { 
             // reorganize the pay_order in groups of payment periods, to be paid in seperate transactions
             pay_orders = this.objArrayGroupBy(pay_order, (obj) => [obj.y,obj.m,obj.d,obj.q]);
-            this.logger.debug(`(LL) Bill produced ${pay_orders.length} pay-orders after grouping by pay-period`);
+            this.logger.debug(`(LL) Bill items produced ${pay_orders.length} pay-orders after grouping by pay-period`);
         }
+        // this.logger.debug(`(LL) trace: after pay_order regrouping pay_orders:IBill[][]=\n${JSON.stringify(pay_orders, null, 4)}`);
         
         let txCounter = 0;
         const maxTxPerSender = this.poolConfiguration.getRequired<number>("maxTransactionsPerSender");
@@ -156,48 +165,66 @@ export class Teller{
                 pay_order_chunks = this.txChunks(order, maxAddressesPerTx);
             }
             this.logger.debug(`(LL) Pay-order will be processed in ${pay_order_chunks.length} chunks of transactions`);
+            // this.logger.debug(`(LL) trace: order after chunking, pay_order_chunks:IBill[][]=\n${JSON.stringify(pay_order_chunks, null, 4)}`);
 
+            let chunkCounter = 1;
             for (const chunk of pay_order_chunks) {
+                // this.logger.debug(`(LL) trace: chunk about to be passed to pay processor, chunk:IBill[]=\n${JSON.stringify(chunk, null, 4)}`);
                 if (txCounter >= maxTxPerSender) {
                     this.logger.debug(`(LL) Maximum transactions per sender limit (${maxTxPerSender}) reached. Waiting ${blockTime} seconds for the next block`);
                     await delay(blockTime * 1000); //await next forging slot
                     txCounter = 0;
                 }
-                const fe = chunk[0]; //first entry
-                const msg = this.configHelper.getConfig().mergeAddrsInTx 
-                    ? `${this.configHelper.getConfig().delegate} reward sharing`
-                    : `${this.configHelper.getConfig().delegate} rewards for ${fe.y}-${fe.m}-${fe.d}-${fe.q}/${24/plan.payperiod}`;
+                // Unless mergeAddrsInTx enabled, chunk entries has the same y, m, d, q. Get the first entry to compose the memo
+                const fe = chunk[0];
+                let msgStamp = `${fe.y}-${fe.m}-${fe.d}-${fe.q}/${24/plan.payperiod}`;
+                let msg = `${this.configHelper.getConfig().delegate} rewards for ${msgStamp}`;
+                if (this.configHelper.getConfig().mergeAddrsInTx) {
+                    msgStamp = "";
+                    msg = `${this.configHelper.getConfig().delegate} reward sharing`;
+                }
 
-                // pass to paybill
+                // Pass to payment processor
+                this.logger.debug(`(LL) Processing chunk#${chunkCounter} of pay-order ${msgStamp}`);
                 const txid = await this.payBill(chunk, msg);
+
+                // On return, add txid to relevant allocations in the local db
                 if (txid && txid.length > 0) {
-                    // On return, mark relevant allocations with transaction id
-                    for (const entry of chunk) {
-                        if (this.configHelper.getConfig().mergeAddrsInTx) {
-                            // As the transaction was merged, reverse the process to locate the relevant individual allocations in the database
-                            // Filtering the original pay_order before merging will get the required y,m,d,q pointers
-                            const allocs_to_add_txid = pay_order.filter( (o) => o.address === entry.address );
-                            for ( const item of allocs_to_add_txid) {
-                                this.sqlite.setTransactionId(txid, plan.payperiod, plan.payoffset, now, item.y, item.m, item.d, item.q, item.address)
-                            }
-                        }
-                        else {                            
-                            this.sqlite.setTransactionId(txid, plan.payperiod, plan.payoffset, now, entry.y, entry.m, entry.d, entry.q, entry.address)
-                        }
+                    if (this.configHelper.getConfig().mergeAddrsInTx) {
+                        // pay-order has distinct addresses. get those included in this transaction
+                        const addrlist = chunk.map(e => e.address);
+                        // filter the original bill (list of allocations) for these addresses, returning their rowid
+                        const idlist: number[] = bill.filter(e => addrlist.includes(e.address)).map(e => e.rowid);
+                        const { changes } = await this.sqlite.setTransactionId(txid, idlist);
+                        this.logger.debug(`(LL) Wrote txid ${txid} to ${changes} allocations`);
+                    }
+                    else {
+                        // pay-order has distinct y,m,d,q,type and address. get those included in this transaction
+                        const addrlist = chunk.map(e => flatten(unpack(e)));
+                        // filter the original bill (list of allocations) for these distinct entries, returning their rowid
+                        const idlist: number[] = bill.filter(e => addrlist.includes(flatten(unpack(e)))).map(e => e.rowid);
+                        const { changes } = await this.sqlite.setTransactionId(txid, idlist);
+                        this.logger.debug(`(LL) Wrote txid ${txid} to ${changes} allocations`);
                     }
                     // Add transaction id to Processor's watchlist to confirm payment
                     this.processor.txWatchPoolAdd( [ txid ] );
+                    this.logger.debug(`(LL) Added txid ${txid} to (transaction applied event) watchlist`);
                     txCounter += 1;
                 }
                 else {
-                    // notify and log error
+                    //TODO: notify and log error
                 }
+                chunkCounter++;
+                await delay(10);
             }
 
             if (txCounter >= maxTxPerSender) {
                 this.logger.debug(`(LL) Maximum transactions per sender limit (${maxTxPerSender}) reached. Waiting ${blockTime} seconds for the next block`);
                 await delay(blockTime * 1000); //await next forging slot
                 txCounter = 0;
+            }
+            else {
+                await delay(100);
             }
         }
         this.logger.debug(`(LL) Teller run complete. Next run is ${this.cronJob && this.cronJob.nextDates().toISOString()}`);
@@ -221,7 +248,8 @@ export class Teller{
             .nonce(nonce.toFixed())
             .fee(dynfee.toFixed());
 
-        this.logger.debug(`(LL) incoming pay order: ${JSON.stringify(payments,null,4)}`);
+        // this.logger.debug(`(LL) incoming pay order: ${JSON.stringify(payments)}`);
+        this.logger.debug(`(LL) Constructing transaction...`);
         let txTotal: Utils.BigNumber = Utils.BigNumber.ZERO;
         let feeDeducted: boolean = false;
         for (const p of payments) {
@@ -237,10 +265,10 @@ export class Teller{
         }
         const walletBalance = pool.getPoolWallet(config.delegateAddress!)?.getBalance() || config.delegateWallet!.getBalance();
         if (walletBalance.isLessThan(txTotal.plus(dynfee))) {
-            this.logger.critical(`(LL) Insufficient wallet balance to execute this pay order. Available:${walletBalance.toFixed()} Required:${txTotal.plus(dynfee).toFixed()}`);
+            this.logger.critical(`(LL) Insufficient wallet balance to execute this pay order. Available:${Utils.formatSatoshi(walletBalance)} Required:${Utils.formatSatoshi(txTotal.plus(dynfee))}`);
             return;
         }
-        this.logger.debug(`(LL) Sufficient wallet balance to execute this pay order. Available:${walletBalance.toFixed()} Required:${txTotal.plus(dynfee).toFixed()}`);
+        this.logger.debug(`(LL) Sufficient wallet balance to execute this pay order. Available:${Utils.formatSatoshi(walletBalance)} Required:${Utils.formatSatoshi(txTotal.plus(dynfee))}`);
         transaction.sign(config.passphrase);
         if (config.secondpass) {
             transaction.secondSign(config.secondpass);
@@ -253,8 +281,9 @@ export class Teller{
         this.logger.debug(`(LL) Pool Processor answered with | ${JSON.stringify(result)}`);
 
         if (result.accept.length > 0) {
-            this.logger.debug(`(LL) Transaction ${result.accept[0]} successfully sent!`);
-        } else {
+            this.logger.debug(`(LL) Transaction txid ${result.accept[0]} successfully sent!`);
+        } 
+        else {
             this.logger.error("(LL) An error occurred sending transaction:");
             if (result.invalid.length > 0) {
                 this.logger.error(`(LL) ${result.errors![result.invalid[0]].type}: ${result.errors![result.invalid[0]].message}`);

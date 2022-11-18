@@ -4,6 +4,7 @@ import SQLite3 from "better-sqlite3";
 import { IAllocation, IBill, IForgedBlock, IForgingStats, PayeeTypes } from "./interfaces";
 
 export const databaseSymbol = Symbol.for("LazyLedger<Database>");
+const sqliteRunError: SQLite3.RunResult = { changes: -1, lastInsertRowid: 0 };
 
 @Container.injectable()
 export class Database {
@@ -25,17 +26,17 @@ export class Database {
     
     public async boot(): Promise<void> {
         this.init();
-        //NOTE: SQLITE fields data type definitions are just documentation
+        //NOTE: SQLITE fields data type definitions are just for documentation purposes by SQLite Design
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         this.database.exec(`
             PRAGMA journal_mode=WAL;
             CREATE TABLE IF NOT EXISTS forged_blocks (round INTEGER NOT NULL, height INTEGER NOT NULL PRIMARY KEY, timestamp NUMERIC NOT NULL, delegate TEXT NOT NULL, reward TEXT NOT NULL, solfunds TEXT NOT NULL, fees TEXT NOT NULL, burnedFees TEXT NOT NULL, votes TEXT, validVotes TEXT, orgValidVotes TEXT, voterCount INTEGER) WITHOUT ROWID;
             CREATE TABLE IF NOT EXISTS missed_blocks (round INTEGER NOT NULL, height INTEGER NOT NULL, delegate TEXT NOT NULL, timestamp NUMERIC PRIMARY KEY NOT NULL) WITHOUT ROWID;
-            CREATE TABLE IF NOT EXISTS allocations (height INTEGER NOT NULL, address TEXT NOT NULL, payeeType INTEGER NOT NULL, balance TEXT NOT NULL, orgBalance TEXT NOT NULL, votePercent INTEGER NOT NULL, orgVotePercent INTEGER NOT NULL, validVote TEXT NOT NULL, shareRatio INTEGER, allotment TEXT, booked NUMERIC, transactionId TEXT, settled NUMERIC, PRIMARY KEY (height, address, payeeType)) WITHOUT ROWID;
+            CREATE TABLE IF NOT EXISTS allocations (height INTEGER NOT NULL, address TEXT NOT NULL, payeeType INTEGER NOT NULL, balance TEXT NOT NULL, orgBalance TEXT NOT NULL, votePercent INTEGER NOT NULL, orgVotePercent INTEGER NOT NULL, validVote TEXT NOT NULL, shareRatio INTEGER, allotment TEXT, booked NUMERIC, transactionId TEXT, settled NUMERIC, PRIMARY KEY (height, address, payeeType));
             CREATE VIEW IF NOT EXISTS missed_rounds AS SELECT missed_blocks.* FROM missed_blocks LEFT OUTER JOIN forged_blocks ON missed_blocks.delegate = forged_blocks.delegate AND missed_blocks.round = forged_blocks.round WHERE forged_blocks.delegate IS NULL;
             DROP VIEW IF EXISTS forged_blocks_human;
             CREATE VIEW forged_blocks_human AS
-                SELECT round, height, strftime('%Y%m%d-%H%M%S', timestamp+${t0}, 'unixepoch') AS forgedTime, 
+                SELECT round, height, strftime('%Y-%m-%d %H:%M:%S', timestamp+${t0}, 'unixepoch') AS forgedTime, 
                     reward/${Constants.SATOSHI}.0 as reward, solfunds/${Constants.SATOSHI}.0 as solfunds, fees/${Constants.SATOSHI}.0 as fees, burnedFees/${Constants.SATOSHI}.0 as burnedFees, 
                     (reward - solfunds)/${Constants.SATOSHI}.0 AS earnedRewards, 
                     (fees - burnedFees)/${Constants.SATOSHI}.0 AS earnedFees, 
@@ -44,10 +45,10 @@ export class Database {
                 FROM forged_blocks;
             DROP VIEW IF EXISTS allocated_human;
             CREATE VIEW allocated_human AS
-                SELECT height, address, payeeType, balance/${Constants.SATOSHI}.0 AS balance, votePercent, 
+                SELECT rowid, height, address, payeeType, balance/${Constants.SATOSHI}.0 AS balance, votePercent, 
                     balance * votePercent / 100 / ${Constants.SATOSHI}.0 as vote, validVote/${Constants.SATOSHI}.0 AS validVote, 
-                    shareRatio, allotment/${Constants.SATOSHI}.0 AS allotment, strftime('%Y%m%d-%H%M%S', booked, 'unixepoch') AS bookedTime, 
-                    transactionId, CASE WHEN settled = 0 THEN 0 ELSE strftime('%Y%m%d-%H%M%S', settled , 'unixepoch') END AS settledTime, 
+                    shareRatio, allotment/${Constants.SATOSHI}.0 AS allotment, strftime('%Y-%m-%d %H:%M:%S', booked, 'unixepoch') AS bookedTime, 
+                    transactionId, CASE WHEN settled = 0 THEN 0 ELSE strftime('%Y-%m-%d %H:%M:%S', settled , 'unixepoch') END AS settledTime, 
                     orgBalance/${Constants.SATOSHI}.0 AS orgBalance, orgVotePercent
                 FROM allocations ORDER BY height DESC;
             DROP VIEW IF EXISTS the_ledger;
@@ -174,7 +175,7 @@ export class Database {
 
     // First of, last of and number of forged blocks between two dates,
     public getForgingStatsForTimeRange(start: number, end: number, network?: Types.NetworkName): IForgingStats {
-        if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
+        if (typeof network !== "undefined" && Object.keys(Networks).includes(network!)) {
             Managers.configManager.setFromPreset(network!);
         } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
@@ -202,7 +203,7 @@ export class Database {
     }
 
     public getVoterCommitment(start: number, end: number, network?: Types.NetworkName): {roundCount: number; blockCount: number; address: string; blocksVoteNotReduced: number; voteChanges?: number}[] {
-        if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
+        if (typeof network !== "undefined" && Object.keys(Networks).includes(network!)) {
             Managers.configManager.setFromPreset(network!);
         } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
@@ -253,7 +254,7 @@ export class Database {
                 .get();
         }
 
-        if (typeof fromHeight === undefined) {
+        if (typeof fromHeight === "undefined") {
             return undefined;
         }
 
@@ -272,7 +273,7 @@ export class Database {
     }
 
     // public getPending(period: number, offset: number, scope: PendingTypes, network?: Types.NetworkName): any {
-    //     if (typeof network !== undefined && Object.keys(Networks).includes(network!)) {
+    //     if (typeof network !== "undefined" && Object.keys(Networks).includes(network!)) {
     //         Managers.configManager.setFromPreset(network!);
     //     } 
     //     const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
@@ -317,12 +318,12 @@ export class Database {
     //     return result;
     // }
 
-    public getBill(period: number, offset: number, now: Date): IBill[] {
+    public getBill(period: number, offset: number, now: Date, exclude: string | undefined = undefined): IBill[] {
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         
         // retrieve the data in chunks of payperiod; 
-        // slice the unixstamp(*) the block was forged into its date components y,m,d and q, where q is 1,2,3,4,6,8,12 (if payperiod <= 24)
-        // note: unixtime is shifted back offset to get blocks forged in a 24 hours time span from offset to offset
+        // slice the unixstamp(*) the block was forged into its date components y,m,d and q, where q is 1,2,3,4,6,8,12,24 (if payperiod <= 24)
+        // note: unixtime is shifted back by offset hours to get the blocks forged in a 24 hours time span from offset to offset
         // TODO: q > 24 (every n days) logic is not fully vetted hence not allowed by the config helper in this release
         let partition = "";
 
@@ -340,97 +341,110 @@ export class Database {
             partition = `0 AS d, 1 + (strftime('%d', fb.ts, 'unixepoch') / ${period}) AS q,`;
         };
 
-        const sqlstr = `SELECT y, m, d, q, payeeType, address, COUNT(allotment) AS duration, SUM(allotment) AS allotment FROM (
-            SELECT 
-              strftime('%Y', fb.ts, 'unixepoch') AS y, 
-              strftime('%m', fb.ts, 'unixepoch') AS m,
-              ${partition}
-              al.address, al.payeeType, al.allotment
+        let excludeCriteria = exclude ? "AND ADDRESS != '" + exclude + "'" : ""; 
+        const sqlstr = 
+            `SELECT rowid,
+                strftime('%Y', fb.ts, 'unixepoch') AS y, 
+                strftime('%m', fb.ts, 'unixepoch') AS m,
+                ${partition}
+                al.address, al.payeeType, al.allotment
             FROM (
-                SELECT height, address, payeeType, allotment FROM allocations
-                WHERE allotment > 0 AND transactionId = '' AND settled = 0) al
-            LEFT JOIN (
-              -- shift epochstamp with epoch and payment time offset
-              SELECT height, ${t0} + timestamp - ( ${offset} * 60 * 60 ) AS ts, ${t0} + timestamp as rts
-              FROM forged_blocks
+                SELECT rowid, height, address, payeeType, allotment
+                FROM allocations
+                WHERE allotment > 0 AND transactionId = '' AND settled = 0
+                ${excludeCriteria}
+            ) al LEFT JOIN (
+                -- shift epochstamp with epoch and payment time offset
+                SELECT height, ${t0} + timestamp - ( ${offset} * 60 * 60 ) AS ts, ${t0} + timestamp as rts
+                FROM forged_blocks
             ) fb 
             ON al.height = fb.height
-            WHERE fb.rts < ${until}
-        )
-        GROUP BY y,m,d,q,payeeType,address`;
+            WHERE fb.rts < ${until}`;
 
         //console.log(`(LL) query to run:\n ${sqlstr}`);
-        const result: IBill[] = this.database
+
+        try {
+            const result: IBill[] = this.database
             .prepare(sqlstr)
             .all();
-        return result;
+            return result;
+        } catch (error) {
+            this.logger.error("(LL) Error retrieving bill from the database");
+            this.logger.error(error.message);
+            return [];
+        }
     }
 
     public getUnsettledAllocations(): string[] {
-        const result = this.database
+        try {
+            const result = this.database
             .prepare(`SELECT DISTINCT transactionId FROM allocations a WHERE transactionId != '' AND settled = 0`)
             .all();
-        return result.map( (r) => r.transactionId )
-    }
-
-    public setTransactionId(txid: string, period: number, offset: number, now: Date, y: string, m: string, d: string, q: number, address: string): SQLite3.RunResult {
-        const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
-        let until = 0;
-        period ||= 24; // prevent div/0 against period=0 leakage
-        if (period <= 24) {
-            // find when the current payment slot ended to exclude blocks forged after that
-            // (e.g. until = 06:59:59, if offset is 3 and payperiod is 4 where q would be 2 of 6)
-            now.setUTCHours(now.getUTCHours() - ((now.getUTCHours() - offset) % period), 0, 0, 0)
-            until = Math.floor(now.getTime() / 1000)
+            return result.map( (r) => r.transactionId )
+        } catch (error) {
+            this.logger.error("(LL) Error retrieving unsettled allocations from the database");
+            this.logger.error(error.message);
+            return [];
         }
-
-        const sqlstr = `UPDATE allocations 
-        SET transactionId = '${txid}'
-        FROM (
-            SELECT height, ${t0} + timestamp - ( ${offset} * 60 * 60 ) AS ts
-            FROM forged_blocks
-        ) AS fb
-        WHERE allocations.height = fb.height
-            AND transactionId = ''
-            AND allotment > 0
-            AND settled = 0
-            AND fb.ts < ${until}
-            AND strftime('%Y', fb.ts, 'unixepoch') = '${y}'
-            AND strftime('%m', fb.ts, 'unixepoch') = '${m}'
-            AND strftime('%d', fb.ts, 'unixepoch') = '${d}'
-            AND 1+strftime('%H', fb.ts, 'unixepoch')/${period} = ${q}
-            AND address = '${address}'`;
-
-        //console.log(`(LL) query to run:\n ${sqlstr}`);
-        const result: SQLite3.RunResult = this.database
-            .prepare(sqlstr)
-            .run();
-
-        // console.log("(LL)", txid, period, offset, until, y, m, d, q, address, "query result:", result);
-        return result;
     }
 
-    public clearTransactionId(txid: string): SQLite3.RunResult {
+    public async setTransactionId(txid: string, idlist: number[]): Promise<SQLite3.RunResult> {
+        // this.logger.debug(`(LL) Writing txid ${txid} to allocations`);
+        const sqlstr = 
+           `UPDATE allocations 
+            SET transactionId = '${txid}'
+            WHERE rowid IN (${[...idlist]})`;
+
+        try {
+            // console.log(`(LL) trace: query to run:\n ${sqlstr}`);
+            const result: SQLite3.RunResult = this.database
+                .prepare(sqlstr)
+                .run();
+            
+            // console.log("(LL) trace: query result:", result);
+            return result;
+        } catch (error) {
+            this.logger.error(`(LL) Error writing txid ${txid} to allocations`);
+            this.logger.error(error.message);
+            return sqliteRunError;
+        }
+    }
+
+    public async clearTransactionId(txid: string): Promise<SQLite3.RunResult> {
+        // this.logger.debug(`(LL) Clearing txid ${txid} from allocations`);
         const sqlstr = `UPDATE allocations SET transactionId = '', settled = 0 WHERE transactionId = '${txid}'`;
-
         //console.log(`(LL) query to run:\n ${sqlstr}`);
-        const result: SQLite3.RunResult = this.database
-            .prepare(sqlstr)
-            .run();
-        //console.log(`(LL) query result:\n ${result}`);
-        return result;
-    }
 
-    public settleAllocation(txid: string, timestamp: number): SQLite3.RunResult {
+        try {
+            const result: SQLite3.RunResult = this.database
+                .prepare(sqlstr)
+                .run();
+            //console.log(`(LL) query result:\n ${result}`);
+            return result;
+        } catch (error) {
+            this.logger.error(`(LL) DB Error clearing txid ${txid} from allocations`);
+            this.logger.error(error.message);
+            return sqliteRunError;
+        }
+}
+
+    public async settleAllocation(txid: string, timestamp: number): Promise<SQLite3.RunResult> {
+        // this.logger.debug(`(LL) Stamping allocations with txid ${txid} as settled`);
         const sqlstr = `UPDATE allocations SET settled = ${timestamp} WHERE transactionId = '${txid}' AND settled = 0`;
-
         //console.log(`(LL) query to run:\n ${sqlstr}`);
-        const result: SQLite3.RunResult = this.database
-            .prepare(sqlstr)
-            .run();
-        //console.log(`q(LL) uery result:\n ${result}`);
-        return result;
-    }
+
+        try {    
+            const result: SQLite3.RunResult = this.database
+                .prepare(sqlstr)
+                .run();
+            //console.log(`(LL) query result:\n ${result}`);
+            return result;
+        } catch (error) {
+            this.logger.error(`(LL) Error stamping allocations with txid ${txid} as settled`);
+            this.logger.error(error.message);
+            return sqliteRunError;
+        }
+}
 
     public updateValidVote(allocations: IAllocation[]): void {
         const updateAllocated: SQLite3.Statement<any[]> = this.database.prepare(
@@ -447,8 +461,8 @@ export class Database {
         const updateForged: SQLite3.Statement<any[]> = this.database.prepare(
             `UPDATE forged_blocks SET validVotes = :validVotes WHERE height = :height`,
         );
+        //console.log(`(LL) query to run:\n ${sqlstr}`);
  
-         //console.log(`(LL) query to run:\n ${sqlstr}`);
         try {
             this.database.transaction(() => {
                 for (const alloc of allocations) {
@@ -542,12 +556,13 @@ export class Database {
                 }
             })();
         } catch (error) {
-            this.logger.error("(LL) Error saving to database");
+            this.logger.error("(LL) Error saving processed blocks to database");
             this.logger.error(error.message);
         }
     }
 
     public purgeFrom(height: number, timestamp: number): void {
+        this.logger.debug(`(LL) Purging blocks with height >= ${height} or timestamp >= ${timestamp}`);
         const deleteForged: SQLite3.Statement<any[]> = this.database.prepare(
             "DELETE FROM forged_blocks WHERE height >= :height OR timestamp >= :timestamp",
         );
@@ -557,24 +572,37 @@ export class Database {
         const deleteAllocated: SQLite3.Statement<any[]> = this.database.prepare(
             "DELETE FROM allocations WHERE height >= :height",
         );
-        this.database.transaction(() => {
-            deleteForged.run({ height, timestamp });
-            deleteMissed.run({ height, timestamp });
-            deleteAllocated.run({ height });
-        })();
+
+        try {
+            this.database.transaction(() => {
+                deleteForged.run({ height, timestamp });
+                deleteMissed.run({ height, timestamp });
+                deleteAllocated.run({ height });
+            })();
+        } catch (error) {
+            this.logger.error("(LL) Error purging blocks from the database");
+            this.logger.error(error.message);
+        }
     }
 
     public rollback(height: number): void {
-        this.triggers(false);
+        this.logger.debug(`(LL) Rolling back the database to height < ${height}`);
         const truncateForged: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM forged_blocks WHERE height >= :height");
         const truncateMissed: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM missed_blocks WHERE height >= :height");
         const truncateAllocated: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM allocations WHERE height >= :height");
-        this.database.transaction(() => {
-            truncateForged.run({height});
-            truncateMissed.run({height});
-            truncateAllocated.run({height});
-        })();
-        this.triggers(true);
+        
+        try {
+            this.triggers(false);
+            this.database.transaction(() => {
+                truncateForged.run({height});
+                truncateMissed.run({height});
+                truncateAllocated.run({height});
+            })();
+            this.triggers(true);
+        } catch (error) {
+            this.logger.error("(LL) Error rolling back the database");
+            this.logger.error(error.message);
+        }
     }
 
     private triggers(create: boolean): void {

@@ -24,7 +24,7 @@ Governed by the plan parameters, a periodic payment job distributes rewards to t
 
 The plugin can optionally be used for bookkeeping only; handling payments externally by directly accessing the database[^4].
 
-[^4]: `.local/share/solar-core/{mainnet|testnet}/lazy-ledger.sqlite`
+[^4]: `~/.local/share/solar-core/{mainnet|testnet}/lazy-ledger.sqlite`
 
 ### Voter protection
 Plugin employs a protection mechanism against malicious bots (those making a roundtrip of votes &| funds among several addresses within the round) by looking ahead one forging cycle and reducing the valid votes of the offending addresses for the last block as per their actions. Consequently last block allocation distribution recalculated to the benefit of all stakeholders.
@@ -53,6 +53,9 @@ cd ~/.local/share/solar-core/{mainnet|testnet}/plugins/
 mkdir '@osrn' && cd '@osrn'
 ln -s ~/solar-core/plugins/lazy-ledger lazy-ledger
 ```
+
+## Upgrading
+See [Release 0.1.0 notes](#release-010)
 
 ## Configuration
 The plugin must be configured by adding a section in `~/.config/solar-core/{mainnet|testnet}/app.json` at the end of the `plugins` within the `relay` block. A sample entry is provided [below](#sample-configuration). Configuration options explanied [here](#config-options).
@@ -180,7 +183,7 @@ Configure, then restart relay. First time sync may take ~15+mins depending on th
 
 ## CLI
 List of Lazy-Ledger commands can be viewed with `solar help`.<br>
-Help specific to a command can be displayed with `solar ll:<command> --help`.
+Command specific help can be displayed with `solar ll:<command> --help`.
 <br><br>
 
 **`solar ll:alloc [--round m | --height n] [--raw | --json | --format="std | json | raw"]`**<br>
@@ -384,8 +387,37 @@ then compare `balance|orgBalance`, `votePercent|orgVotePercent` and `vote|validV
 You are welcome to make any other accuracy checks by direct database query.
 
 ## Version Info
-- Release 0.0.8 - requires `@solar-network/: ^4.1.2 || ^4.1.2-next.0`
-- Release 0.0.5 - requires `@solar-network/: ^4.1.0 || ^4.1.0-next.5`
+### Release 0.1.0
+**Changes**
+- Fixed issue `large number of voters may block main loop when writing txid to allocations`
+- Added `rowid`column to allocations table
+- Changed datetime string format from `%Y%m%d-%H%M%S` to `%Y-%m-%d %H:%M:%S` in database views
+- Added try/catch blocks to database calls
+- Moved utility functions to separate library
+- Fixed typeof check
+
+Before upgrading to this release
+1. stop relay `pm2 stop solar-relay`
+1. backup your database `tar -cPzf ~/lazy-ledger.backup-$(date +%Y%m%d-%H%M%S).tar.gz ~/.local/share/solar-core/{mainnet|testnet}/lazy-ledger*`
+1. modify database table:
+```bash
+sqlite3 ~/.local/share/solar-core/{mainnet|testnet}/lazy-ledger.sqlite
+```
+```SQL
+ALTER TABLE allocations RENAME TO allocations_old;
+CREATE TABLE allocations (height INTEGER NOT NULL, address TEXT NOT NULL, payeeType INTEGER NOT NULL, balance TEXT NOT NULL, orgBalance TEXT NOT NULL, votePercent INTEGER NOT NULL, orgVotePercent INTEGER NOT NULL, validVote TEXT NOT NULL, shareRatio INTEGER, allotment TEXT, booked NUMERIC, transactionId TEXT, settled NUMERIC, PRIMARY KEY (height, address, payeeType));
+INSERT INTO allocations SELECT * FROM allocations_old;
+SELECT COUNT(*) FROM allocations_old; --- note the length
+SELECT COUNT(*) FROM allocations; --- compare to above
+DROP TABLE allocations_old;
+```
+
+### Release 0.0.9
+requires `@solar-network/: ^4.1.2 || ^4.1.2-next.0`
+
+### Release 0.0.5
+requires `@solar-network/: ^4.1.0 || ^4.1.0-next.5`
+
 ## Roadmap
 Not necessarily in this order;
 

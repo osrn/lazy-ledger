@@ -42,7 +42,7 @@ export class Command extends Commands.Command {
         const data = sqlite.getPendingSimple();
         const format = this.getFlag("raw") ? "raw" : (this.getFlag("json") ? "json" : this.getFlag("format"));
         this.components.log(`Retrieving pending allocations since last payment ...`);
-        if (typeof data === undefined || data?.blockRewards === null) {
+        if (typeof data === "undefined" || data?.blockRewards === null) {
             console.log("nothing pending yet.")
         }
         else {
