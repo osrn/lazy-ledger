@@ -72,7 +72,7 @@ export class ConfigHelper {
 
         plans[0].mincapSatoshi = plans[0].mincap ? Utils.BigNumber.make(plans[0].mincap).times(Constants.SATOSHI) : Utils.BigNumber.ZERO;
         if (plans[0].maxcap) {
-            plans[0].maxcapSatoshi = Utils.BigNumber.make(plans[0].maxcap);
+            plans[0].maxcapSatoshi = Utils.BigNumber.make(plans[0].maxcap).times(Constants.SATOSHI);
         }
 
         // make sure the first plan contains height and timestamp, converting timehuman to unix timestamp on the fly
@@ -103,9 +103,9 @@ export class ConfigHelper {
             }
 
             // Convert parameters
-            plans[i].mincapSatoshi = plans[i].mincap ? Utils.BigNumber.make(plans[i].mincap) : Utils.BigNumber.ZERO;
+            plans[i].mincapSatoshi = plans[i].mincap ? Utils.BigNumber.make(plans[i].mincap).times(Constants.SATOSHI) : Utils.BigNumber.ZERO;
             if (plans[i].maxcap) {
-                plans[i].maxcapSatoshi = Utils.BigNumber.make(plans[i].maxcap);
+                plans[i].maxcapSatoshi = Utils.BigNumber.make(plans[i].maxcap).times(Constants.SATOSHI);
             }
         }
 

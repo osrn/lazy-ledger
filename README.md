@@ -41,7 +41,7 @@ No action taken if **vote percent increases** or **funds received** or the **all
 solar plugin:install https://github.com/osrn/lazy-ledger.git
 ```
 
-or
+**Manual install:**
 ```bash
 . ~/.solar/.env
 cd ~/solar-core/plugins
@@ -54,8 +54,18 @@ mkdir '@osrn' && cd '@osrn'
 ln -s ~/solar-core/plugins/lazy-ledger lazy-ledger
 ```
 
-## Upgrading
+## Upgrading to 0.1.0
 See [Release 0.1.0 notes](#release-010)
+
+## Upgrade procedure
+**Manual update:**
+```bash
+. ~/.solar/.env
+cd ~/solar-core/plugins/lazy-ledger
+git pull
+pnpm build
+#pm2 restart solar-relay
+```
 
 ## Configuration
 The plugin must be configured by adding a section in `~/.config/solar-core/{mainnet|testnet}/app.json` at the end of the `plugins` within the `relay` block. A sample entry is provided [below](#sample-configuration). Configuration options explanied [here](#config-options).
@@ -387,6 +397,10 @@ then compare `balance|orgBalance`, `votePercent|orgVotePercent` and `vote|validV
 You are welcome to make any other accuracy checks by direct database query.
 
 ## Version Info
+### Release 0.1.1
+**Changes**
+- Fixed issue `missing Satoshi conversion when reading mincap & maxcap from config`
+
 ### Release 0.1.0
 **Changes**
 - Fixed issue `large number of voters may block main loop when writing txid to allocations`
