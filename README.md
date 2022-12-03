@@ -397,6 +397,26 @@ then compare `balance|orgBalance`, `votePercent|orgVotePercent` and `vote|validV
 You are welcome to make any other accuracy checks by direct database query.
 
 ## Version Info
+### Release 0.1.2
+**Changes**
+
+- Fixed issue `RangeError [ERR_OUT_OF_RANGE] exception when serializing transaction`<br>
+
+When `reservePaysFees` option is enabled, the transaction fee is deducted from the reserve's reward allocation when constructing the rewards payment transaction. This is a preference to ensure rewards due can be paid even if the delegate wallet is empty to start with.<br>
+
+Exception is raised due to negative transfer amount and the issue surfaces under a potentially rare condition: 
+1. reservePaysFees option enabled (default)
+1. delegate reserve wallet is self voting, 
+1. in populated pay-order, reserve wallet voter allotment (payeeType=voter) comes before reserve wallet reserve allotment (payeeType=reserve) in the array
+1. reserve wallet voter allocation is less than the required transaction fee :beetle:
+
+The issue is now fixed and tx fee is deducted only from reserve's allocation (payeeType=0) and when it can cover the fee.<br>
+The algorithm is also improved in order to:
+- Try subsequent reserve wallets if first one cannot cover the costs
+- Log a warning if none of the reserve wallet allocations meet the criteria (in which case tx fee will be paid from the delegate wallet as if  `reservePaysFees=false`).
+
+:warning: Important : Moving forward, tx fee will not be deducted from any reserve allocations when `mergeAddrsInTx=true`, consequently requiring delegate wallet to have enough funds to pay full rewards+txfee.
+
 ### Release 0.1.1
 **Changes**
 - Fixed issue `missing Satoshi conversion when reading mincap & maxcap from config`
