@@ -1,6 +1,6 @@
 import { Managers, Transactions, Utils } from "@solar-network/crypto";
 import { Container, Contracts, Providers, Utils as AppUtils} from "@solar-network/kernel";
-import { IBill } from "./interfaces";
+import { IBill, PayeeTypes } from "./interfaces";
 import { Database, databaseSymbol } from "./database";
 import { ConfigHelper, configHelperSymbol } from "./config_helper";
 import { Processor } from "./processor";
@@ -234,7 +234,6 @@ export class Teller{
 
     private async payBill(payments: IBill[], msg: string): Promise<string | undefined> {
         const config = this.configHelper.getConfig();
-        const plan = this.configHelper.getPresentPlan(); 
         const pool = this.app.get<Contracts.Pool.Service>(Container.Identifiers.PoolService);
         
         let nonce = pool.getPoolWallet(config.delegateAddress!)?.getNonce().plus(1) || config.delegateWallet!.getNonce().plus(1);
@@ -251,17 +250,29 @@ export class Teller{
         // this.logger.debug(`(LL) incoming pay order: ${JSON.stringify(payments)}`);
         this.logger.debug(`(LL) Constructing transaction...`);
         let txTotal: Utils.BigNumber = Utils.BigNumber.ZERO;
-        let feeDeducted: boolean = false;
+        let feeDeducted: boolean = !config.reservePaysFees;
         for (const p of payments) {
-            if (config.reservePaysFees && !feeDeducted && p.address === plan.reserves[0].address ) {
-                const deducted = Utils.BigNumber.make(p.allotment).minus(dynfee).toFixed();
-                transaction.addPayment(p.address, deducted);
-                feeDeducted = true; //deduct the fee only once
+            if (!feeDeducted && p.payeeType == PayeeTypes.reserve) {
+                const deductedAmount = Utils.BigNumber.make(p.allotment).minus(dynfee);
+                if (!deductedAmount.isNegative()) {
+                    feeDeducted = true; //deduct the fee only once
+                    if (!deductedAmount.isZero()) {
+                        transaction.addPayment(p.address, deductedAmount.toFixed());
+                        txTotal = txTotal.plus(deductedAmount);
+                    }
+                }
+                else {
+                    transaction.addPayment(p.address, p.allotment);
+                    txTotal = txTotal.plus(p.allotment);
+                }
             }
             else {
                 transaction.addPayment(p.address, p.allotment);
+                txTotal = txTotal.plus(p.allotment);
             }
-            txTotal = txTotal.plus(p.allotment);
+        }
+        if (config.reservePaysFees && !config.mergeAddrsInTx && !feeDeducted) {
+            this.logger.warning(`(LL) Chunk does not contain a reserve address or none of the reserve allocations are adequate to pay the transaction fee (${Utils.formatSatoshi(dynfee)}). Tx fee should be covered by the delegate wallet!`);
         }
         const walletBalance = pool.getPoolWallet(config.delegateAddress!)?.getBalance() || config.delegateWallet!.getBalance();
         if (walletBalance.isLessThan(txTotal.plus(dynfee))) {
