@@ -5,9 +5,7 @@ import { Database, databaseSymbol } from "./database";
 import { ConfigHelper, configHelperSymbol } from "./config_helper";
 import { Processor } from "./processor";
 import { CronJob } from "cron";
-import delay from "delay";
-// import { Handlers } from "@solar-network/transactions";
-// import { CoreTransactionType, TransactionType, TransactionTypeGroup } from "@packages/crypto/dist/enums";
+import {setTimeout} from "node:timers/promises";
 
 export const tellerSymbol = Symbol.for("LazyLedger<Teller>");
 
@@ -31,10 +29,6 @@ export class Teller{
     @Container.inject(Symbol.for("LazyLedger<Processor>"))
     private readonly processor!: Processor;
 
-    // @Container.inject(Container.Identifiers.TransactionHandlerRegistry)
-    // @Container.tagged("state", "copy-on-write")
-    // private readonly handlerRegistry!: Handlers.Registry;
-    
     @Container.inject(Container.Identifiers.PoolProcessor)
     private readonly poolProcessor!: Contracts.Pool.Processor;
 
@@ -62,12 +56,12 @@ export class Teller{
         const plan = this.configHelper.getPresentPlan(); 
         
         if (plan.payperiod == 0) {
-            this.logger.debug(`(LL) Teller schedule not started as Plan Payment Period is 0`);
+            this.logger.warning(`(LL) Teller schedule not started as Plan Payment Period is 0`);
         }
         else {
             // When relay starts, we do not know how long had it been since last CRON run. 
             // If payperiod < 1 day, no trouble CRON can start as of today, however if payperiod spans multiple days,
-            // we need to find how many days since, and set an anchor point accordingly to run the next one right on schedule. 
+            // we need to find how many days past since, and set an anchor point accordingly to run the next one right on schedule. 
             const lastcron_ts = AppUtils.formatTimestamp(this.sqlite.getLastPayAttempt()?.timestamp || 0).unix;
             const today = new Date();
             const daysSinceLastCron = (today.setUTCHours(0,0,0,0) - new Date(lastcron_ts * 1000).setUTCHours(0,0,0,0)) / 86400000; //set the clock to 00:00 before getting the day difference
@@ -172,7 +166,7 @@ export class Teller{
                 // this.logger.debug(`(LL) trace: chunk about to be passed to pay processor, chunk:IBill[]=\n${JSON.stringify(chunk, null, 4)}`);
                 if (txCounter >= maxTxPerSender) {
                     this.logger.debug(`(LL) Maximum transactions per sender limit (${maxTxPerSender}) reached. Waiting ${blockTime} seconds for the next block`);
-                    await delay(blockTime * 1000); //await next forging slot
+                    await setTimeout(1000); //await next forging slot
                     txCounter = 0;
                 }
                 // Unless mergeAddrsInTx enabled, chunk entries has the same y, m, d, q. Get the first entry to compose the memo
@@ -215,16 +209,16 @@ export class Teller{
                     //TODO: notify and log error
                 }
                 chunkCounter++;
-                await delay(10);
+                await setTimeout(10);
             }
 
             if (txCounter >= maxTxPerSender) {
                 this.logger.debug(`(LL) Maximum transactions per sender limit (${maxTxPerSender}) reached. Waiting ${blockTime} seconds for the next block`);
-                await delay(blockTime * 1000); //await next forging slot
+                await setTimeout(blockTime * 1000); //await next forging slot
                 txCounter = 0;
             }
             else {
-                await delay(100);
+                await setTimeout(100);
             }
         }
         this.logger.debug(`(LL) Teller run complete. Next run is ${this.cronJob && this.cronJob.nextDates().toISOString()}`);
@@ -237,9 +231,6 @@ export class Teller{
         const pool = this.app.get<Contracts.Pool.Service>(Container.Identifiers.PoolService);
         
         let nonce = pool.getPoolWallet(config.delegateAddress!)?.getNonce().plus(1) || config.delegateWallet!.getNonce().plus(1);
-        // console.log("pool wallet"); console.log(pool.getPoolWallet(config.delegateAddress!));
-        // console.log("delegate wallet"); console.log(config.delegateWallet);
-
         const dynfee = this.getDynamicFee(payments.length, msg.length, !!config.secondpass);
 
         const transaction = Transactions.BuilderFactory.multiPayment()
@@ -295,7 +286,7 @@ export class Teller{
             this.logger.debug(`(LL) Transaction txid ${result.accept[0]} successfully sent!`);
         } 
         else {
-            this.logger.error("(LL) An error occurred sending transaction:");
+            this.logger.critical("(LL) An error occurred sending transaction:");
             if (result.invalid.length > 0) {
                 this.logger.error(`(LL) ${result.errors![result.invalid[0]].type}: ${result.errors![result.invalid[0]].message}`);
             } else if (result.excess.length > 0) {
@@ -304,34 +295,6 @@ export class Teller{
         }
         return result.accept[0];
     }
-
-    /*private dynamicFee({addonBytes, satoshiPerByte, transaction}: Contracts.Shared.DynamicFeeContext): Utils.BigNumber {
-        addonBytes = addonBytes || 0;
-
-        if (satoshiPerByte <= 0) {
-            satoshiPerByte = 1;
-        }
-
-        const transactionSizeInBytes: number = Math.round(transaction.serialised.length / 2);
-        return Utils.BigNumber.make(addonBytes + transactionSizeInBytes).times(satoshiPerByte);
-    }
-
-    private getMinimumFee(transaction: Interfaces.ITransaction): Utils.BigNumber {
-        const milestone = Managers.configManager.getMilestone();
-
-        if (milestone.dynamicFees && milestone.dynamicFees.enabled) {
-            const addonBytes: number = milestone.dynamicFees.addonBytes[transaction.key];
-
-            const minFee: Utils.BigNumber = this.dynamicFee({
-                transaction,
-                addonBytes,
-                satoshiPerByte: milestone.dynamicFees.minFee,
-            });
-
-            return minFee;
-        }
-        return Utils.BigNumber.ZERO;
-    }*/
 
     private getDynamicFee(rcptCount:number, memoSize:number, hasSecondSig: boolean): Utils.BigNumber {
         const milestone = Managers.configManager.getMilestone();

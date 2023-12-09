@@ -9,9 +9,6 @@ export class Command extends Commands.Command {
     @Container.inject(Container.Identifiers.ProcessManager)
     private readonly processManager!: ProcessManager;
 
-    // @Container.inject(databaseSymbol)
-    // private readonly sqlite!: Database;
-
     public signature: string = "ll:pending";
 
     public description: string = "Show pending (=unpaid) allocations since last payment";

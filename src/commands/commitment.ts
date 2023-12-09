@@ -9,9 +9,6 @@ export class Command extends Commands.Command {
     @Container.inject(Container.Identifiers.ProcessManager)
     private readonly processManager!: ProcessManager;
 
-    // @Container.inject(databaseSymbol)
-    // private readonly sqlite!: Database;
-
     public signature: string = "ll:commitment";
 
     public description: string = "Show voter commitment (voting balance not reduced) during a time frame";

@@ -21,11 +21,6 @@ export class ConfigHelper {
     private lastHeight: number = 0;
     private lastTimestamp: number = 0;
 
-    // @Container.postConstruct()
-    // public initialise(): void {
-    //     console.log("(LL) config_helper.ts post-construct");
-    // }
-
     public async boot(): Promise<boolean> {
         this.config = this.configuration.all() as unknown as IConfig;
 
@@ -35,7 +30,7 @@ export class ConfigHelper {
             "blockchain",
         );
         if ( !(this.config.delegate && walletRepository.findByUsername(this.config.delegate)) ) {
-            this.logger.error("(LL) Config error! Missing or invalid delegate username");
+            this.logger.emergency("(LL) Config error! Missing or invalid delegate username");
             return false;
         }
         this.config.delegateWallet = walletRepository.findByUsername(this.config.delegate!);
@@ -43,18 +38,18 @@ export class ConfigHelper {
         this.config.delegatePublicKey = this.config.delegateWallet.getPublicKey();
 
         if (!(this.config.plans && (this.config.plans.length > 0))) {
-            this.logger.error("(LL) Config error. At least one reward sharing plan is required");
+            this.logger.emergency("(LL) Config error. At least one reward sharing plan is required");
             return false;
         }
         const plans = this.config.plans;
 
         if (plans[0].share === undefined) {
-            this.logger.error("(LL) Config error. First plan must declare a share ratio - even if 0");
+            this.logger.emergency("(LL) Config error. First plan must declare a share ratio - even if 0");
             return false;
         }
         
         if (!(plans[0].reserves && plans[0].reserves[0].address !== undefined && plans[0].reserves[0].share !== undefined)) {
-            this.logger.error("(LL) Config error. Base plan must declare a reserve address and share - even if delegate self and 0");
+            this.logger.emergency("(LL) Config error. Base plan must declare a reserve address and share - even if delegate self and 0");
             return false;
         }
 
@@ -63,10 +58,10 @@ export class ConfigHelper {
         if (plans[0].payperiod !== undefined && !([0,1,2,3,4,6,8,12,24].includes(plans[0].payperiod))) {
             plans[0].payperiod = 24;
         }
-        if (plans[0].payperiod !== undefined && plans[0].payoffset > 24) {
+        if (plans[0].payperiod !== undefined && plans[0].payoffset >= 24) {
             plans[0].payoffset = 0;
         }
-        if (plans[0].payperiod !== undefined && plans[0].guardtime > 60) {
+        if (plans[0].payperiod !== undefined && plans[0].guardtime >= 60) {
             plans[0].guardtime = 10;
         }
 
@@ -103,7 +98,9 @@ export class ConfigHelper {
             }
 
             // Convert parameters
-            plans[i].mincapSatoshi = plans[i].mincap ? Utils.BigNumber.make(plans[i].mincap).times(Constants.SATOSHI) : Utils.BigNumber.ZERO;
+            if (plans[i].mincap) {
+                plans[i].mincapSatoshi = Utils.BigNumber.make(plans[i].mincap).times(Constants.SATOSHI);
+            }
             if (plans[i].maxcap) {
                 plans[i].maxcapSatoshi = Utils.BigNumber.make(plans[i].maxcap).times(Constants.SATOSHI);
             }

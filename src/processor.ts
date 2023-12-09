@@ -7,7 +7,7 @@ import { Database, databaseSymbol } from "./database";
 import { Teller, tellerSymbol } from "./teller";
 import { TxRepository, txRepositorySymbol } from "./tx_repository";
 import { msToHuman } from "./utils";
-import delay from "delay";
+import {setTimeout} from "node:timers/promises";
 
 export const processorSymbol = Symbol.for("LazyLedger<Processor>");
 
@@ -35,14 +35,11 @@ export class Processor {
     @Container.tagged("state", "blockchain")
     private readonly walletRepository!: Contracts.State.WalletRepository;
 
-    //@Container.inject(Container.Identifiers.DatabaseTransactionRepository)
-    // private readonly transactionRepository!: Repositories.TransactionRepository;
-
     @Container.inject(txRepositorySymbol)
     private readonly transactionRepository!: TxRepository;
 
-    private initial: boolean = false;
-    private lastStoredBlockHeight: number = 0;
+    private initialSync: boolean = false;
+    private lastProcessedBlockHeight: number = 0;
     private sqlite!: Database;
     private teller!: Teller;
     private syncing: boolean = false;
@@ -62,12 +59,12 @@ export class Processor {
     }
 
     public isInitialSync(): boolean {
-        return this.initial;
+        return this.initialSync;
     }
 
     private finishedInitialSync(): void {
         this.logger.info("(LL) Finished (initial|catch-up) sync");
-        this.setInitialSync(false);
+        this.initialSync = false;
         if (this.configHelper.getConfig().postInitInstantPay) {
             this.configHelper.getConfig().postInitInstantPay = false;
             this.teller.instantPay();
@@ -87,20 +84,19 @@ export class Processor {
     }
 
     private async getLastForgedBlock(): Promise<Interfaces.IBlockData | undefined> {
-        return this.transactionRepository.getLastForgedBlock(this.configHelper.getConfig().delegate);
+        const myLastForgedBlock: { id: string; height: number; username: string; timestamp: number } = (await this.blockRepository.getLastForgedBlocks())
+            .filter( e => e.username === this.configHelper.getConfig().delegate)[0];
+        return await this.blockRepository.findByHeight(myLastForgedBlock.height);
 
-        // Initially used method below retired as lastBlock attribute sporadically disappears from the delegate record
-        // if (this.configHelper.getConfig().delegateWallet!.hasAttribute("delegate.lastBlock")) {
-        //     const lastForgedBlockId: string = this.configHelper.getConfig().delegateWallet!.getAttribute("delegate.lastBlock");
-        //     return (await this.blockRepository.findById(lastForgedBlockId));
-        // }
-        // return undefined;
+        // retired previously used method in favor of core functions.
+        // return this.transactionRepository.getLastForgedBlock(this.configHelper.getConfig().delegate);
+
     }
 
-    private async getLastForgedBlockHeight(): Promise<number> {
-        const lastForgedBlock = await this.getLastForgedBlock();
-        return lastForgedBlock ? lastForgedBlock.height : 0;
-    }
+    // private async getLastForgedBlockHeight(): Promise<number> {
+    //     const lastForgedBlock = await this.getLastForgedBlock();
+    //     return lastForgedBlock ? lastForgedBlock.height : 0;
+    // }
 
     public txWatchPoolAdd(txids: string[]): void {
         txids.forEach((id) => this.txWatchPool.add(id));
@@ -110,37 +106,37 @@ export class Processor {
         const lastForgedBlock: Interfaces.IBlockData | undefined = await this.getLastForgedBlock();
         const lastForgedBlockHeight: number = lastForgedBlock ? lastForgedBlock!.height : 0;
 
-        this.lastStoredBlockHeight = this.sqlite.getHeight();
+        this.lastProcessedBlockHeight = this.sqlite.getHeight();
 
         // roll back if local db is ahead of the network, purging from the start of the round
         // (solar snapshot:rollback always starts from the start of the round, during which we may have 
         // a different forging slot - hence height - from the one we had forged in that round. 
         // (Cleaning from the lastForgedBlockHeight would have left rogue block heights in the local db, 
         // if new forging slot were to be later than the old one)
-        if (this.lastStoredBlockHeight > lastForgedBlockHeight) {
+        if (this.lastProcessedBlockHeight > lastForgedBlockHeight) {
             const lastForgedRound = AppUtils.roundCalculator.calculateRound(lastForgedBlockHeight);
             const block = await this.blockRepository.findByHeight(lastForgedRound.roundHeight);
 
             if (!block) {
-                this.logger.error(`(LL) Unexpected error. Need to roll back to height ${lastForgedRound.roundHeight} but no such height exists in block repository. 
-                lastForgedBlock: ${lastForgedBlock} lastStoredBlockHeight: ${this.lastStoredBlockHeight} lastForgedRound: ${lastForgedRound}`);
+                this.logger.emergency(`(LL) Unexpected error. Need to roll back to height ${lastForgedRound.roundHeight} but no such height exists in block repository. lastForgedBlock: ${lastForgedBlock} lastProcessedBlockHeight: ${this.lastProcessedBlockHeight} lastForgedRound: ${lastForgedRound}`);
+                throw new Error(`Unexpected error! Block to roll back to does not exist in repository`);
             }
             else {
                 this.sqlite.purgeFrom(block.height, block.timestamp);
-                this.lastStoredBlockHeight = this.sqlite.getHeight();    
+                this.lastProcessedBlockHeight = this.sqlite.getHeight();    
             }
         }
         else {
             // catch-up if local database is behind the network
-            if (lastForgedBlockHeight !== this.lastStoredBlockHeight) {
-                this.setInitialSync(true);
+            if (lastForgedBlockHeight !== this.lastProcessedBlockHeight) {
+                this.initialSync = true;
                 this.sync();
             }
             else {
                 if (this.configHelper.getConfig().postInitInstantPay) {
                     this.configHelper.getConfig().postInitInstantPay = false;
                     this.teller.instantPay();
-                }    
+                }
             }
         }
 
@@ -148,9 +144,9 @@ export class Processor {
         this.txWatchPoolAdd(this.sqlite.getUnsettledAllocations());
         for (const txid of this.txWatchPool) {
             const forgedTx = await this.transactionRepository.transactionRepository.findById(txid);
-            if ( forgedTx ) {
+            if (forgedTx) {
                 const queryResult = await this.sqlite.settleAllocation(txid, AppUtils.formatTimestamp(forgedTx.timestamp).unix);
-                this.logger.debug(`(LL) Stamped ${queryResult.changes} allocations having txid ${txid} as settled`)
+                this.logger.debug(`(LL) Stamped ${queryResult.changes} allocations having txid ${txid} as settled`);
                 this.txWatchPool.delete(txid!);
             }
             else {
@@ -159,18 +155,17 @@ export class Processor {
                 //TODO: can be run as a periodic job, rather than running at relay restart only? (hence erased TXid can be paid in next payment run)
             }
         }
-                
+
+        // insert event listeners
         this.events.listen(AppEnums.BlockEvent.Applied, {
             handle: async ({ data }) => {
-                // console.log(`(LL) received new block applied event at ${data.height} forged by ${data.generatorPublicKey}`)
-
-                // wait until block is in repository
+                // wait until block is in block repository
                 while (data.height > (await this.getLastBlockHeight())) {
-                    await delay(100);
+                    await setTimeout(100);
                 }
                 
                 if (this.configHelper.getConfig().delegatePublicKey === data.generatorPublicKey) {
-                    this.logger.debug(`(LL) Received new block applied event at ${data.height} forged by us`)
+                    this.logger.debug(`(LL) Received new block applied event at ${data.height} forged by us`);
                     this.sync();
                 }
 
@@ -186,9 +181,9 @@ export class Processor {
                 // console.log(`(LL) received block reverted event at ${data.height} forged by ${data.generatorPublicKey}`)
 
                 if (this.configHelper.getConfig().delegatePublicKey === data.generatorPublicKey) {
-                    this.logger.debug(`(LL) Received block revert event for height ${data.height} previously forged by us`)
+                    this.logger.debug(`(LL) Received block revert event for height ${data.height} previously forged by us`);
                     this.sqlite.purgeFrom(data.height, data.timestamp);
-                    this.lastStoredBlockHeight = this.sqlite.getHeight();
+                    this.lastProcessedBlockHeight = this.sqlite.getHeight();
                 }
 
                 // Restart Teller cron if a new plan is in effect by this height/time
@@ -198,12 +193,7 @@ export class Processor {
             }
         });
 
-        this.events.listen(AppEnums.RoundEvent.Missed, {
-            handle: async ({ data }) => {
-                //TODO: to be handled with telegram|discord integration
-            },
-        });
-
+        // listen transaction events for the purpose of 1) recording payment settlements back to the db 2) antibot actions
         this.events.listen(AppEnums.TransactionEvent.Applied, {
             handle: async ({ data }) => {
                 const txData: Interfaces.ITransactionData = data as Interfaces.ITransactionData;
@@ -212,28 +202,28 @@ export class Processor {
                 if (txData.typeGroup == Enums.TransactionTypeGroup.Core && txData.type == Enums.TransactionType.Core.Transfer) {
                     // wait until block is in block repository
                     while (txData.blockHeight! > (await this.getLastBlockHeight())) {
-                        await delay(100);
+                        await setTimeout(100);
                     }
                     const txBlock = await this.blockRepository.findByHeight(txData.blockHeight!);
                     const config: IConfig = this.configHelper.getConfig();
 
                     // If the transaction is in the watch list, mark the allocation payment as settled
                     if (this.txWatchPool.has(txData.id!)) {
-                        this.logger.debug(`(LL) Received a transaction applied event with txid ${txData.id} which is in the watchlist`)
+                        this.logger.debug(`(LL) Received a transaction applied event with txid ${txData.id} which is in the watchlist`);
 
                         // Transactions v2 and v3 no longer has a timetamp. Get it from the block it was forged in
                         if (txBlock) {
                             const queryResult = await this.sqlite.settleAllocation(txData.id!, AppUtils.formatTimestamp(txBlock.timestamp).unix);
-                            this.logger.debug(`(LL) Stamped ${queryResult.changes} allocations having txid ${txData.id} as settled`)
+                            this.logger.debug(`(LL) Stamped ${queryResult.changes} allocations having txid ${txData.id} as settled`);
                             this.txWatchPool.delete(txData.id!);
                         }
                     }
                     // Anti-bot: check for voter originated outbound transfers within 1 round following a forged block - only during real-time processing
                     // and reduce valid vote to the new wallet amount if voter wallet made an outbound transfer within the round
                     // TODO: Cover other transaction methods.
-                    else if (config.antibot && !this.isInitialSync()) {
-                        while (this.isSyncing()) {
-                            await delay(100);
+                    else if (config.antibot && !this.initialSync) {
+                        while (this.syncing) {
+                            await setTimeout(100);
                         }
                         const whitelist = [...config.whitelist, config.delegateAddress];
                         const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
@@ -250,9 +240,9 @@ export class Processor {
                                 // console.log("lastVoterAllocation before");console.log(lastVoterAllocation);
                                 if (vrecord) {
                                     const txAmount = txData.asset?.transfers?.map(v => v.amount).reduce( (prev,curr) => prev.plus(curr), Utils.BigNumber.ZERO) || Utils.BigNumber.ZERO;
-                                    this.logger.debug(`(LL) Anti-bot detected voter ${vrecord.address} balance reduction of ${txAmount.div(Constants.SATOSHI).toFixed()} SXP within round [${lastForgedBlock.round}-${txRound.round}].`)
+                                    this.logger.debug(`(LL) Anti-bot detected voter ${vrecord.address} balance reduction of ${txAmount.div(Constants.SATOSHI).toFixed()} SXP within round [${lastForgedBlock.round}-${txRound.round}].`);
                                     // console.log("registry before");console.log(vrecord);
-                                    this.logger.debug(`(LL) Redistributing block allocations for height ${lastForgedBlock.height}.`)
+                                    this.logger.debug(`(LL) Redistributing block allocations for height ${lastForgedBlock.height}.`);
 
                                     vrecord.balance = vrecord.balance.minus(txAmount).minus(txData.fee); // reduce balance at forged block by the txamount
                                     if (vrecord.balance.isNegative()) // We check outbound transfers only. Voter may have received funds before sending out.
@@ -279,6 +269,7 @@ export class Processor {
             },
         });
 
+        // listen vote events for the purpose of antibot actions
         this.events.listen(AppEnums.VoteEvent.Vote, {
             handle: async ({ data }) => {
                 // console.log(`(LL) received vote event with id ${JSON.stringify(data, null, 4)}`);
@@ -286,9 +277,9 @@ export class Processor {
 
                 // Anti-bot: check for vote changes within 1 round following a forged block - only during real-time processing
                 // and reduce the valid vote to the new voting amount
-                if (config.antibot && !this.isInitialSync() && data.previousVotes && Object.keys(data.previousVotes).includes(config.delegate)) {
-                    while (this.isSyncing()) {
-                        await delay(100);
+                if (config.antibot && !this.initialSync && data.previousVotes && Object.keys(data.previousVotes).includes(config.delegate)) {
+                    while (this.syncing) {
+                        await setTimeout(100);
                     }
                     const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
                     const lastVoterAllocation: IAllocation[] = this.sqlite.getVoterAllocationAtHeight();
@@ -303,11 +294,11 @@ export class Processor {
 
                             // sender is a voter. If vote is reduced (or unvoted), recalculate the voter's valid vote and update last forged block allocations
                             // console.log("lastVoterAllocation before");console.log(lastVoterAllocation);
-                            if (vrecord) {                                
+                            if (vrecord) {
                                 const votePercent = data.wallet.votingFor[config.delegate]?.percent || 0;
                                 if (votePercent < vrecord.votePercent) {
-                                    this.logger.debug(`(LL) Anti-bot detected voter ${vrecord.address} vote percent reduction (${vrecord.votePercent} => ${votePercent}) within round [${lastForgedBlock.round}-${txRound.round}].`)
-                                    this.logger.debug(`(LL) Redistributing block allocations for height ${lastForgedBlock.height}.`)
+                                    this.logger.debug(`(LL) Anti-bot detected voter ${vrecord.address} vote percent reduction (${vrecord.votePercent} => ${votePercent}) within round [${lastForgedBlock.round}-${txRound.round}].`);
+                                    this.logger.debug(`(LL) Redistributing block allocations for height ${lastForgedBlock.height}.`);
 
                                     vrecord.votePercent = votePercent; // reduce vote percent at forged block to the new value
                                     const vote = vrecord.balance.times(Math.round(vrecord.votePercent * 100)).div(10000);
@@ -352,60 +343,90 @@ export class Processor {
         this.logger.debug(`(LL) Received batch of ${blocks.length} blocks to process | heights: ${blockheights.toString()}`);
         
         for (let blockCounter = 0; blockCounter < blocks.length; blockCounter++) {
+            const tick1 = Date.now();
+
             const forgedBlocks: IForgedBlock[] = [];
             const missedBlocks: IMissedBlock[] = [];
             const allocations: IAllocation[] = [];
 
-            // const tick0 = Date.now();
             const block: Interfaces.IBlockData = blocks[blockCounter];
-            // console.log(JSON.stringify(block,null,4));
             const round = AppUtils.roundCalculator.calculateRound(block.height);
             const generatorWallet: Contracts.State.Wallet = this.walletRepository.findByPublicKey(block.generatorPublicKey); // reading from the forged block instead of config.delegateWallet
             const generator: string = block.height == 1 ? generatorWallet.getAddress() : generatorWallet.getAttribute("delegate.username");
             const solfunds: Utils.BigNumber = Object.values(block.donations!).reduce((a, b) => a.plus(b), Utils.BigNumber.ZERO);
             const voters: { height:number; address: string; balance: Utils.BigNumber; percent: number; vote: Utils.BigNumber; validVote: Utils.BigNumber}[] = [];
 
-            this.logger.debug(`(LL) Processing block | round:${round.round } height:${block.height} timestamp:${block.timestamp} delegate: ${generator} reward:${block.reward} solfunds:${solfunds} block_fees:${block.totalFee} burned_fees:${block.burnedFee}`)
+            const lastChainedBlockHeight: number = await this.getLastBlockHeight();
+            this.logger.debug(`(LL) Last chained: #${lastChainedBlockHeight} | Now processing block round:${round.round } height:${block.height} timestamp:${block.timestamp} delegate: ${generator} reward:${block.reward} solfunds:${solfunds} block_fees:${block.totalFee} burned_fees:${block.burnedFee}`)
 
             const plan = this.configHelper.getPlan(block.height, block.timestamp);
-            // const tick1 = Date.now();
-            const voter_roll = await this.transactionRepository.getDelegateVotesByHeight(block.height, generator, block.generatorPublicKey);
-            // console.log(`(LL) voter_roll retrieved in ${Date.now() - tick1} ms`)
-            const lastVoterAllocation: IAllocation[] = this.sqlite.getAllVotersLastAllocation();
-            let voterIndex=1;
-            for (const v of voter_roll) {
-                const tick0 = Date.now();
-                const walletAddress: string = this.walletRepository.findByPublicKey(v.publicKey).getAddress();
-                let startFrom: number = 0;
-                let prevBalance: Utils.BigNumber = Utils.BigNumber.ZERO;
-                if (lastVoterAllocation.length > 0 && lastVoterAllocation[0].height < block.height) {
-                    const vrecord: IAllocation | undefined = lastVoterAllocation.find( v => v.address ===walletAddress);
-                    if (vrecord) {
-                        startFrom = vrecord.height;
-                        prevBalance = vrecord.orgBalance;
-                    }
-                }
-                const walletBalance = prevBalance.plus(await this.transactionRepository.getNetBalanceByHeightRange(startFrom, block.height, walletAddress, v.publicKey));
-                const vote = walletBalance.times(Math.round(v.percent * 100)).div(10000);
-                const validVote = vote.isLessThan(plan.mincapSatoshi) || plan.blacklist.includes(walletAddress) ? 
-                    Utils.BigNumber.ZERO : (plan.maxcapSatoshi && vote.isGreaterThan(plan.maxcapSatoshi) ? plan.maxcapSatoshi : vote);
+            const config = this.configHelper.getConfig();
+            let tick = Date.now();
 
-                voters.push({
-                    height: block.height,
-                    address: walletAddress,
-                    balance: walletBalance,
-                    percent: v.percent,
-                    vote: vote,
-                    validVote: validVote
-                });
-                // Voter processing times will be the longest first time a voter is processed as transaction will be fetched from the very beginning.
-                // Log the progress to ease the observer's mind
-                if (startFrom == 0) {
-                    this.logger.debug(`(LL) Voter ${voterIndex} / ${voter_roll.length} processed in ${msToHuman(Date.now() - tick0)}`)
-                }
-                voterIndex++;
+            if (lastChainedBlockHeight === block.height) { 
+                // if we are not processing the backlog but operating in real time
+                // retrieve the voters and their balances from the blockchain
+                const myVoters = this.walletRepository
+                    .allByPublicKey()
+                    .filter((wallet) => !wallet.getVoteBalance(config.delegate).isZero())
+                    .map ( (w) => {
+                        const vote = w.getVoteBalance(config.delegate);
+                        const validVote = vote.isLessThan(plan.mincapSatoshi) || plan.blacklist.includes(w.getAddress()) ? 
+                            Utils.BigNumber.ZERO : (plan.maxcapSatoshi && vote.isGreaterThan(plan.maxcapSatoshi) ? plan.maxcapSatoshi : vote);
+    
+                        return {
+                            height: block.height,
+                            address: w.getAddress(),
+                            balance: w.getBalance(),
+                            percent: (w.getAttribute("votes") as Map<string, number>).get(config.delegate)!,
+                            vote,
+                            validVote: validVote
+                        }
+                    });
+                this.logger.debug(`(LL) voter roll and voter balances retrieved from blockRepository in ${msToHuman(Date.now() - tick)}`);
+                voters.push(...myVoters);
             }
-            //console.log(`(LL) voters\n${JSON.stringify(voters)}`);
+            else {
+                const voter_roll = await this.transactionRepository.getDelegateVotesByHeight(block.height, generator, block.generatorPublicKey);
+                this.logger.debug(`(LL) voter roll retrieved from blockchain in ${msToHuman(Date.now() - tick)}`);
+                tick = Date.now();
+                const lastVoterAllocation: IAllocation[] = this.sqlite.getAllVotersLastAllocation();
+                this.logger.debug(`(LL) voters last allocation retrieved from LL db in ${msToHuman(Date.now() - tick)}`);
+                let voterIndex=1;
+                for (const v of voter_roll) {
+                    const tick2 = Date.now();
+                    const walletAddress: string = this.walletRepository.findByPublicKey(v.publicKey).getAddress();
+                    let startFrom: number = 0;
+                    let prevBalance: Utils.BigNumber = Utils.BigNumber.ZERO;
+                    if (lastVoterAllocation.length > 0 && lastVoterAllocation[0].height < block.height) {
+                        const vrecord: IAllocation | undefined = lastVoterAllocation.find( v => v.address ===walletAddress);
+                        if (vrecord) {
+                            startFrom = vrecord.height;
+                            prevBalance = vrecord.orgBalance;
+                        }
+                    }
+                    const walletBalance = prevBalance.plus(await this.transactionRepository.getNetBalanceByHeightRange(startFrom, block.height, walletAddress, v.publicKey));
+                    const vote = walletBalance.times(Math.round(v.percent * 100)).div(10000);
+                    const validVote = vote.isLessThan(plan.mincapSatoshi) || plan.blacklist.includes(walletAddress) ? 
+                        Utils.BigNumber.ZERO : (plan.maxcapSatoshi && vote.isGreaterThan(plan.maxcapSatoshi) ? plan.maxcapSatoshi : vote);
+    
+                    voters.push({
+                        height: block.height,
+                        address: walletAddress,
+                        balance: walletBalance,
+                        percent: v.percent,
+                        vote: vote,
+                        validVote: validVote
+                    });
+                    // Voter processing times will be the longest first time a voter is processed as transactions to build wallet balance will be fetched from the solar database from the very beginning.
+                    // Log the progress to ease observers mind
+                    if (startFrom == 0) {
+                        this.logger.debug(`(LL) Voter ${voterIndex} / ${voter_roll.length} processed in ${msToHuman(Date.now() - tick2)}`);
+                    }
+                    voterIndex++;
+                }
+            }
+
             const votes: Utils.BigNumber = voters.map( o => o.vote).reduce((a, b) => a.plus(b), Utils.BigNumber.ZERO);
             const validVotes: Utils.BigNumber = voters.map( o => o.validVote).reduce((a, b) => a.plus(b), Utils.BigNumber.ZERO);
             const timeNow = Math.floor(Date.now() / 1000);
@@ -427,8 +448,8 @@ export class Processor {
 
             const earned_tx_fees = block.totalFee.minus(block.burnedFee!);
             const netReward = block.reward.minus(solfunds).plus(this.configHelper.getConfig().shareEarnedFees ? earned_tx_fees : Utils.BigNumber.ZERO);
-            //console.log(`(LL) allocations before\n${JSON.stringify(allocations)}`);
 
+            //console.log(`(LL) allocations before\n${JSON.stringify(allocations)}`);
             for (const r of plan.reserves) {
                 let allotted = netReward.times(Math.round(r.share * 100)).div(10000);
                 if (!this.configHelper.getConfig().shareEarnedFees && this.configHelper.getConfig().reserveGetsFees && r.address === plan.reserves[0].address) {
@@ -488,50 +509,59 @@ export class Processor {
                 });
             }
             //console.log(`(LL) allocations after voters\n${JSON.stringify(allocations)}`);
-            // if (this.isInitialSync()) {
-            //     this.logger.debug(`(LL) block processed in ${msToHuman(Date.now() - tick0)}`);
-            // }
+            this.logger.debug(`(LL) block #${block.height} processed in ${msToHuman(Date.now() - tick1)}`);;
             this.sqlite.insert(forgedBlocks, missedBlocks, allocations);
-            this.lastStoredBlockHeight = block.height;
+            this.lastProcessedBlockHeight = block.height;
         }
         //this.lastVoterAllocation = [...allocations].filter( a => a.payeeType === PayeeTypes.voter);
         this.logger.debug(`(LL) Completed processing batch of ${blocks.length} blocks in ${msToHuman(Date.now() - tick0)}`);
     }
 
-    private setInitialSync(state): void {
-        this.initial = state;
-    }
-
-    private setSyncing(state): void {
-        this.syncing = state;
-    }
-
     private async sync(): Promise<void> {
-        if (this.isSyncing()) {
-            this.logger.debug(`(LL) Active sync &| block processing in effect. Skipping.`)
+        if (this.syncing) {
+            this.logger.debug(`(LL) Active sync &| block processing in effect. Skipping.`);
             return;
         }
-        this.setSyncing(true);
-        this.logger.info(`(LL) Starting ${this.isInitialSync() ? "(initial|catch-up)" : ""} sync ...`);
+        this.syncing = true;
+        this.logger.info(`(LL) Starting ${this.initialSync ? "(initial|catch-up) " : ""}sync ...`);
         const tick0 = Date.now();
         let loop: boolean = true;
         while (loop) {
             const lastChainedBlockHeight: number = await this.getLastBlockHeight();
-            const lastForgedBlockHeight: number = await this.getLastForgedBlockHeight();
+            // const lastForgedBlockHeight: number = await this.getLastForgedBlockHeight();
+            const lastForgedBlock: Interfaces.IBlockData | undefined = await this.getLastForgedBlock();
+            const lastForgedBlockHeight: number = lastForgedBlock ? lastForgedBlock!.height : 0;
             const ourEpoch = this.configHelper.getFirstAllocatingPlan()?.height || 0; // NOTE TO SELF: must be run after async calls above
 
             // if initial sync, ignore all blocks until the height allocations starts
-            const lastStoredBlockHeight: number = this.sqlite.getHeight() || (ourEpoch < lastChainedBlockHeight ? ourEpoch : lastChainedBlockHeight);
+            const lastProcessedBlockHeight: number = this.sqlite.getHeight() || (ourEpoch < lastChainedBlockHeight ? ourEpoch : lastChainedBlockHeight);
+            this.logger.debug(`(LL) assessing sync status > Last chained: #${lastChainedBlockHeight} | Last forged: #${lastForgedBlockHeight} | Last processed: #${lastProcessedBlockHeight}`);
 
-            // NOTE TO SELF: lastStoredBlockHeight checks if we are lagging. 
-            // this.lastStoredBlockHeight check is for if network rolled-back since we last fetched from block repository
-            if (lastStoredBlockHeight < lastForgedBlockHeight && this.lastStoredBlockHeight < lastChainedBlockHeight) { 
+            // roll back if local db is ahead of the network, purging from the start of the round we last forged
+            if (this.lastProcessedBlockHeight > lastForgedBlockHeight || this.lastProcessedBlockHeight > lastChainedBlockHeight) {
+                // we should never arrive here as in the event of a fork, necessary actions will be taken at BlockEvent.Reverted event handler and local db will be rolled back properly
+                const lastForgedRound = AppUtils.roundCalculator.calculateRound(lastForgedBlockHeight);
+                const block = await this.blockRepository.findByHeight(lastForgedRound.roundHeight);
+
+                if (!block) {
+                    this.logger.emergency(`(LL) Unexpected error. Need to roll back to height ${lastForgedRound.roundHeight} but no such height exists in block repository. lastForgedBlock: ${lastForgedBlock} lastProcessedBlockHeight: ${this.lastProcessedBlockHeight} lastForgedRound: ${lastForgedRound}`);
+                    throw new Error(`Unexpected error! Block to roll back to does not exist in repository`);
+                }
+                else {
+                    this.sqlite.purgeFrom(block.height, block.timestamp);
+                    this.lastProcessedBlockHeight = this.sqlite.getHeight();    
+                }
+            }
+
+            if (lastProcessedBlockHeight < lastForgedBlockHeight && this.lastProcessedBlockHeight < lastChainedBlockHeight) { 
+                // lastProcessedBlockHeight < lastForgedBlockHeight: are we lagging
+                // this.lastProcessedBlockHeight < lastChainedBlockHeight: has blockchain rolled-back since we last fetched from block repository
                 const blocks: Contracts.Shared.DownloadBlock[] = await this.database.getBlocksForDownload(
-                    lastStoredBlockHeight + 1,
+                    lastProcessedBlockHeight + 1,
                     10000,
                     true);
 
-                if (blocks.length) { //actually redundant when lastStoredBlockHeight < lastChainedBlockHeight
+                if (blocks.length) { //actually redundant when lastProcessedBlockHeight < lastChainedBlockHeight
                     const delegatesBlocks = blocks.filter((block) => block.generatorPublicKey === this.configHelper.getConfig().delegatePublicKey);
 
                     if (delegatesBlocks.length) {
@@ -540,19 +570,18 @@ export class Processor {
                 }
                 else {
                     loop = false;
-                    this.logger.debug(`(LL) Sync complete | lastChainedBlockHeight:${lastChainedBlockHeight} lastForgedBlockHeight:${lastForgedBlockHeight} lastStoredBlockHeight:${lastStoredBlockHeight}---`)
+                    this.logger.debug(`(LL) Sync complete > Last chained: #${lastChainedBlockHeight} | Last forged: #${lastForgedBlockHeight} | Last processed: #${lastProcessedBlockHeight}---`);
                 }
             }
-            // TODO: lastStored > lastForged
             else {
                 loop = false;
-                this.logger.debug(`(LL) Sync complete | lastChainedBlockHeight:${lastChainedBlockHeight} lastForgedBlockHeight:${lastForgedBlockHeight} lastStoredBlockHeight:${lastStoredBlockHeight}---`)
-                if (this.isInitialSync() && lastStoredBlockHeight === lastForgedBlockHeight) {
-                    this.logger.debug(`(LL) backlog processed in ${msToHuman(Date.now() - tick0)}`)
+                this.logger.debug(`(LL) Sync complete > Last chained: #${lastChainedBlockHeight} | Last forged: #${lastForgedBlockHeight} | Last processed: #${lastProcessedBlockHeight}---`);
+                if (this.initialSync && lastProcessedBlockHeight === lastForgedBlockHeight) {
+                    this.logger.debug(`(LL) backlog processed in ${msToHuman(Date.now() - tick0)}`);
                     this.finishedInitialSync();
                 }
             }
         }
-        this.setSyncing(false);
+        this.syncing =false;
     }
 }

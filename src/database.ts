@@ -15,7 +15,7 @@ export class Database {
 
     public init(dataPath?: string) {
         dataPath ||= process.env.CORE_PATH_DATA;
-        const dbfile = "lazy-ledger.sqlite";
+        const dbfile = "lltbw/lazy-ledger.sqlite";
         if (this.logger) 
             this.logger.debug(`(LL) Opening database connection @ ${dataPath}/${dbfile}`);
         else
@@ -33,6 +33,15 @@ export class Database {
             CREATE TABLE IF NOT EXISTS forged_blocks (round INTEGER NOT NULL, height INTEGER NOT NULL PRIMARY KEY, timestamp NUMERIC NOT NULL, delegate TEXT NOT NULL, reward TEXT NOT NULL, solfunds TEXT NOT NULL, fees TEXT NOT NULL, burnedFees TEXT NOT NULL, votes TEXT, validVotes TEXT, orgValidVotes TEXT, voterCount INTEGER) WITHOUT ROWID;
             CREATE TABLE IF NOT EXISTS missed_blocks (round INTEGER NOT NULL, height INTEGER NOT NULL, delegate TEXT NOT NULL, timestamp NUMERIC PRIMARY KEY NOT NULL) WITHOUT ROWID;
             CREATE TABLE IF NOT EXISTS allocations (height INTEGER NOT NULL, address TEXT NOT NULL, payeeType INTEGER NOT NULL, balance TEXT NOT NULL, orgBalance TEXT NOT NULL, votePercent INTEGER NOT NULL, orgVotePercent INTEGER NOT NULL, validVote TEXT NOT NULL, shareRatio INTEGER, allotment TEXT, booked NUMERIC, transactionId TEXT, settled NUMERIC, PRIMARY KEY (height, address, payeeType));
+            CREATE INDEX IF NOT EXISTS forged_blocks_delegate_timestamp ON forged_blocks (delegate, timestamp);
+            CREATE INDEX IF NOT EXISTS forged_blocks_delegate_round on forged_blocks (delegate, round);
+            CREATE INDEX IF NOT EXISTS forged_blocks_timestamp ON forged_blocks ("timestamp");
+            CREATE INDEX IF NOT EXISTS forged_blocks_round_height_timestamp ON forged_blocks (round,height,"timestamp");
+            CREATE INDEX IF NOT EXISTS missed_blocks_delegate on missed_blocks (delegate);
+            CREATE INDEX IF NOT EXISTS allocations_transactionId ON allocations (transactionId);
+            CREATE INDEX IF NOT EXISTS allocations_booked ON allocations (booked);
+            CREATE INDEX IF NOT EXISTS allocations_settled ON allocations (settled);
+            CREATE INDEX IF NOT EXISTS allocations_address ON allocations (address);
             CREATE VIEW IF NOT EXISTS missed_rounds AS SELECT missed_blocks.* FROM missed_blocks LEFT OUTER JOIN forged_blocks ON missed_blocks.delegate = forged_blocks.delegate AND missed_blocks.round = forged_blocks.round WHERE forged_blocks.delegate IS NULL;
             DROP VIEW IF EXISTS forged_blocks_human;
             CREATE VIEW forged_blocks_human AS
@@ -57,9 +66,6 @@ export class Database {
                     b.validVotes, a.address, a.payeeType, a.balance, a.votePercent, a.vote, a.validVote, 
                     a.shareRatio, a.allotment, a.bookedTime, a.transactionId, a.settledTime, a.orgBalance, a.orgVotePercent 
                 FROM allocated_human a LEFT JOIN forged_blocks_human b ON a.height = b.height;
-            CREATE INDEX IF NOT EXISTS forged_blocks_delegate_timestamp ON forged_blocks (delegate, timestamp);
-            CREATE INDEX IF NOT EXISTS forged_blocks_delegate_round on forged_blocks (delegate, round);
-            CREATE INDEX IF NOT EXISTS missed_blocks_delegate on missed_blocks (delegate);
         `);
         this.triggers(true);
         this.logger.info("(LL) Database boot complete");
@@ -268,55 +274,8 @@ export class Database {
             WHERE height > ${fromHeight}`)
         .get();
 
-        //console.log(`(LL) query to run:\n ${sqlstr}`);
         return result;
     }
-
-    // public getPending(period: number, offset: number, scope: PendingTypes, network?: Types.NetworkName): any {
-    //     if (typeof network !== "undefined" && Object.keys(Networks).includes(network!)) {
-    //         Managers.configManager.setFromPreset(network!);
-    //     } 
-    //     const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
-    //     const now = new Date();
-
-    //     // Amount to be retrieved is;
-    //     //  -- all pending up until last payment period if PendingType.due
-    //     //  -- all pending from last payment period to now if PendingType.current
-    //     //  -- anything pending
-    //     period ||= 24; // prevent div/0 against period=0 leakage
-    //     if (scope === PendingTypes.due || scope === PendingTypes.current) {
-    //         // TODO: Handle case period > 24
-
-    //         // find when the current payment slot ended to exclude blocks forged after that
-    //         // (e.g. until 06:59:59 if offset is 3 and payperiod is 4) where q would be 2 of 6
-    //         now.setUTCHours(now.getUTCHours() - ((now.getUTCHours() - offset) % period), 0, 0, 0)
-    //     }
-    //     // cutoff time is current time only with PendingTypes.all
-    //     const cutoffts = Math.floor(now.getTime() / 1000)
-    //     const bracket = (scope === PendingTypes.current) ? ">" : "<";
-
-    //     const result = this.database.prepare(
-    //        `SELECT MIN(round) AS minRound, MAX(round) AS maxRound, COUNT(round) AS rounds, 
-	//                MIN(height) AS minHeight, MAX(height) AS maxHeight, COUNT(height) AS blocks, 
-	//                SUM(reward) AS blockRewards, SUM(solfunds) AS blockFunds, 
-	//                SUM(fees) as blockFees, SUM(burnedFees) AS burnedFees, 
-	//                SUM(earnedRewards) AS earnedRewards, SUM(earnedFees) AS earnedFees
-    //         FROM forged_blocks_human fbh 
-    //         -- As unpaid allocations may span intermittent block ranges, 
-    //         -- we just cannot sum a fixed range of blocks to find due amount.
-    //         -- Thus, match against a filtered list
-    //         WHERE height IN (
-    //         	SELECT DISTINCT al.height
-	//             FROM allocations al INNER JOIN (SELECT height, ${t0} + timestamp as rts FROM forged_blocks) AS fb
-	//             ON al.height = fb.height 
-	//             WHERE al.allotment > 0 
-	//             AND al.transactionId = ''
-	//             AND fb.rts ${bracket} ${cutoffts})`)
-    //     .all();
-
-    //     //console.log(`(LL) query to run:\n ${sqlstr}`);
-    //     return result;
-    // }
 
     public getBill(period: number, offset: number, now: Date, exclude: string | undefined = undefined): IBill[] {
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
@@ -361,16 +320,14 @@ export class Database {
             ON al.height = fb.height
             WHERE fb.rts < ${until}`;
 
-        //console.log(`(LL) query to run:\n ${sqlstr}`);
-
         try {
             const result: IBill[] = this.database
             .prepare(sqlstr)
             .all();
             return result;
         } catch (error) {
-            this.logger.error("(LL) Error retrieving bill from the database");
-            this.logger.error(error.message);
+            this.logger.critical("(LL) Error retrieving bill from the database");
+            this.logger.critical(error.message);
             return [];
         }
     }
@@ -382,66 +339,58 @@ export class Database {
             .all();
             return result.map( (r) => r.transactionId )
         } catch (error) {
-            this.logger.error("(LL) Error retrieving unsettled allocations from the database");
-            this.logger.error(error.message);
+            this.logger.critical("(LL) Error retrieving unsettled allocations from the database");
+            this.logger.critical(error.message);
             return [];
         }
     }
 
     public async setTransactionId(txid: string, idlist: number[]): Promise<SQLite3.RunResult> {
-        // this.logger.debug(`(LL) Writing txid ${txid} to allocations`);
         const sqlstr = 
            `UPDATE allocations 
             SET transactionId = '${txid}'
             WHERE rowid IN (${[...idlist]})`;
 
         try {
-            // console.log(`(LL) trace: query to run:\n ${sqlstr}`);
             const result: SQLite3.RunResult = this.database
                 .prepare(sqlstr)
                 .run();
             
-            // console.log("(LL) trace: query result:", result);
             return result;
         } catch (error) {
-            this.logger.error(`(LL) Error writing txid ${txid} to allocations`);
-            this.logger.error(error.message);
+            this.logger.critical(`(LL) Error writing txid ${txid} to allocations`);
+            this.logger.critical(error.message);
             return sqliteRunError;
         }
     }
 
     public async clearTransactionId(txid: string): Promise<SQLite3.RunResult> {
-        // this.logger.debug(`(LL) Clearing txid ${txid} from allocations`);
         const sqlstr = `UPDATE allocations SET transactionId = '', settled = 0 WHERE transactionId = '${txid}'`;
-        //console.log(`(LL) query to run:\n ${sqlstr}`);
 
         try {
             const result: SQLite3.RunResult = this.database
                 .prepare(sqlstr)
                 .run();
-            //console.log(`(LL) query result:\n ${result}`);
+
             return result;
         } catch (error) {
-            this.logger.error(`(LL) DB Error clearing txid ${txid} from allocations`);
-            this.logger.error(error.message);
+            this.logger.critical(`(LL) DB Error clearing txid ${txid} from allocations`);
+            this.logger.critical(error.message);
             return sqliteRunError;
         }
 }
 
     public async settleAllocation(txid: string, timestamp: number): Promise<SQLite3.RunResult> {
-        // this.logger.debug(`(LL) Stamping allocations with txid ${txid} as settled`);
         const sqlstr = `UPDATE allocations SET settled = ${timestamp} WHERE transactionId = '${txid}' AND settled = 0`;
-        //console.log(`(LL) query to run:\n ${sqlstr}`);
 
         try {    
             const result: SQLite3.RunResult = this.database
                 .prepare(sqlstr)
                 .run();
-            //console.log(`(LL) query result:\n ${result}`);
             return result;
         } catch (error) {
-            this.logger.error(`(LL) Error stamping allocations with txid ${txid} as settled`);
-            this.logger.error(error.message);
+            this.logger.critical(`(LL) Error stamping allocations with txid ${txid} as settled`);
+            this.logger.critical(error.message);
             return sqliteRunError;
         }
 }
@@ -461,7 +410,6 @@ export class Database {
         const updateForged: SQLite3.Statement<any[]> = this.database.prepare(
             `UPDATE forged_blocks SET validVotes = :validVotes WHERE height = :height`,
         );
-        //console.log(`(LL) query to run:\n ${sqlstr}`);
  
         try {
             this.database.transaction(() => {
@@ -480,8 +428,8 @@ export class Database {
                 updateForged.run({ height: allocations[0].height, validVotes: validVotes.toFixed() });
             })();
         } catch (error) {
-            this.logger.error("(LL) Error updating last vote allocations");
-            this.logger.error(error.message);
+            this.logger.critical("(LL) Error updating last vote allocations");
+            this.logger.critical(error.message);
         }
     }
 
@@ -490,7 +438,6 @@ export class Database {
         missedBlocks: { round: number; height: number; delegate: string; timestamp: number }[],
         allocations: IAllocation[]
     ): void {
-        // console.log(`(LL) allocations:\n ${JSON.stringify(allocations)}`);
         const insertForged: SQLite3.Statement<any[]> = this.database.prepare(
             "INSERT INTO forged_blocks VALUES (:round, :height, :timestamp, :delegate, :reward, :solfunds, :fees, :burnedFees, :votes, :validVotes, :orgValidVotes, :voterCount)",
         );
@@ -556,8 +503,8 @@ export class Database {
                 }
             })();
         } catch (error) {
-            this.logger.error("(LL) Error saving processed blocks to database");
-            this.logger.error(error.message);
+            this.logger.critical("(LL) Error saving processed blocks to database");
+            this.logger.critical(error.message);
         }
     }
 
@@ -580,8 +527,8 @@ export class Database {
                 deleteAllocated.run({ height });
             })();
         } catch (error) {
-            this.logger.error("(LL) Error purging blocks from the database");
-            this.logger.error(error.message);
+            this.logger.critical("(LL) Error purging blocks from the database");
+            this.logger.critical(error.message);
         }
     }
 
@@ -600,22 +547,11 @@ export class Database {
             })();
             this.triggers(true);
         } catch (error) {
-            this.logger.error("(LL) Error rolling back the database");
-            this.logger.error(error.message);
+            this.logger.critical("(LL) Error rolling back the database");
+            this.logger.critical(error.message);
         }
     }
 
     private triggers(create: boolean): void {
-        /*if (create) {
-            this.database.exec(
-                "CREATE TRIGGER IF NOT EXISTS monotonic_blocks BEFORE INSERT ON forged_blocks BEGIN SELECT CASE WHEN (SELECT height FROM forged_blocks ORDER BY height DESC LIMIT 1) != NEW.height - 1 THEN RAISE (ABORT,'Forged block height did not increment monotonically') END; END",
-            );
-            this.database.exec(
-                "CREATE TRIGGER IF NOT EXISTS forged_for_missed BEFORE INSERT ON missed_blocks BEGIN SELECT CASE WHEN (SELECT height FROM forged_blocks WHERE height = NEW.height) != NEW.height THEN RAISE (ABORT,'Missed block height did not have a matching forged height') END; END",
-            );
-        } else {
-            this.database.exec("DROP TRIGGER IF EXISTS monotonic_blocks");
-            this.database.exec("DROP TRIGGER IF EXISTS forged_for_missed");
-        }*/
     }
 }

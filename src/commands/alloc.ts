@@ -10,9 +10,6 @@ export class Command extends Commands.Command {
     @Container.inject(Container.Identifiers.ProcessManager)
     private readonly processManager!: ProcessManager;
 
-    // @Container.inject(databaseSymbol)
-    // private readonly sqlite!: Database;
-
     public signature: string = "ll:alloc";
 
     public description: string = "Show allocation at given block height or round";

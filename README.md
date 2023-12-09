@@ -49,6 +49,7 @@ git clone https://github.com/osrn/lazy-ledger
 cd lazy-ledger
 CFLAGS="$CFLAGS" CPATH="$CPATH" LDFLAGS="$LDFLAGS" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" pnpm install
 pnpm build
+# Following is necessary for solar ll: commands to be registered
 cd ~/.local/share/solar-core/{mainnet|testnet}/plugins/
 mkdir '@osrn' && cd '@osrn'
 ln -s ~/solar-core/plugins/lazy-ledger lazy-ledger
@@ -397,6 +398,43 @@ then compare `balance|orgBalance`, `votePercent|orgVotePercent` and `vote|validV
 You are welcome to make any other accuracy checks by direct database query.
 
 ## Version Info
+### Release 0.2.0
+#### -next.0
+**Changes**
+- **Breaking!** moved sqlite database file location. See upgrade instructions below.
+- fixed plan payperiod out of bounds auto correction condition
+- fixed issue plan mincap creation when plan does not specify one
+- added new indexes to the sqlite database<sup>(*)</sup>
+- added version information to boot time log messages
+- increased block processing speed when blocks are being retrieved in real time (not catching a backlog) by utilizing the current information available from the blockRepository rather than replaying the transactions happened since last block forged on top of the state last saved in the local sqlite database
+- package `delay-5.0.0` replaced with `node:timers/promises`
+- cleanup obselete comments and dead code
+
+> First time boot duration may be prolonged due to creation of new indexes after the upgrade
+
+**Before upgrading to this release**
+1. stop relay `pm2 stop solar-relay`
+1. backup your database `tar -cPzf ~/lazy-ledger.backup-$(date +%Y%m%d-%H%M%S).tar.gz ~/.local/share/solar-core/{mainnet|testnet}/lazy-ledger*`
+1. create a subfolder and move your database:
+```bash
+cd  ~/.local/share/solar-core/{mainnet|testnet}
+mkdir lltbw
+mv lazy-ledger.sqlite* lltbw
+cd ~
+```
+
+**To upgrade to this release**
+1. Pull from upstream and build. It is safe and recommended to remove the delay package first.
+```bash
+cd  ~/solar-core/plugins/lazy-ledger
+. ~/.solar/.env
+git pull
+pnpm rm delay
+pnpm build
+cd ~
+```
+
+
 ### Release 0.1.2
 **Changes**
 
@@ -430,7 +468,7 @@ The algorithm is also improved in order to:
 - Moved utility functions to separate library
 - Fixed typeof check
 
-Before upgrading to this release
+**Before upgrading to this release**
 1. stop relay `pm2 stop solar-relay`
 1. backup your database `tar -cPzf ~/lazy-ledger.backup-$(date +%Y%m%d-%H%M%S).tar.gz ~/.local/share/solar-core/{mainnet|testnet}/lazy-ledger*`
 1. modify database table:
@@ -454,10 +492,11 @@ requires `@solar-network/: ^4.1.0 || ^4.1.0-next.5`
 
 ## Roadmap
 Not necessarily in this order;
-
+- [ ] Seperate configuration from app.json
+- [ ] Better logging
 - [ ] Web|console dashboard
 - [ ] Telegram|Discord integration
-- [ ] Database backup
+- [ ] Database backup and periodic cleanup
 - [ ] Transaction memo customization
 - [ ] Payment periods > 24h
 

@@ -9,9 +9,6 @@ export class Command extends Commands.Command {
     @Container.inject(Container.Identifiers.ProcessManager)
     private readonly processManager!: ProcessManager;
 
-    // @Container.inject(databaseSymbol)
-    // private readonly sqlite!: Database;
-
     public signature: string = "ll:lastpaid";
 
     public description: string = "Show summary|detail info about the last paid forged-block allocation";

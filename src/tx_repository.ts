@@ -36,6 +36,7 @@ export class TxRepository {
                 SELECT DISTINCT ON (q2.sender_public_key) q2.sender_public_key, q2.block_height, q2.asset->'votes' AS voting_for
                 FROM transactions q2 INNER JOIN (
                     -- find all delegates voters at a given block height
+                    -- PostgreSQL provides the DISTINCT ON (expression) to keep the “first” row of each group of duplicates
                     SELECT DISTINCT ON (sender_public_key) sender_public_key, block_height
                     FROM transactions
                     WHERE ((type_group=${Enums.TransactionTypeGroup.Solar} AND type=${Enums.TransactionType.Solar.Vote}) 
