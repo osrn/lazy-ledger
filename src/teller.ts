@@ -1,8 +1,11 @@
 import { Managers, Transactions, Utils } from "@solar-network/crypto";
 import { Container, Contracts, Providers, Utils as AppUtils} from "@solar-network/kernel";
+import { emoji } from "node-emoji";
 import { IBill, PayeeTypes } from "./interfaces";
 import { Database, databaseSymbol } from "./database";
+import { inlineCode } from "discord.js";
 import { ConfigHelper, configHelperSymbol } from "./config_helper";
+import { DiscordHelper, discordHelperSymbol } from "./discordhelper";
 import { Processor } from "./processor";
 import { CronJob } from "cron";
 import {setTimeout} from "node:timers/promises";
@@ -25,6 +28,9 @@ export class Teller{
 
     @Container.inject(configHelperSymbol)
     private readonly configHelper!: ConfigHelper;
+
+    @Container.inject(discordHelperSymbol)
+    private readonly dc!: DiscordHelper;
 
     @Container.inject(Symbol.for("LazyLedger<Processor>"))
     private readonly processor!: Processor;
@@ -56,7 +62,9 @@ export class Teller{
         const plan = this.configHelper.getPresentPlan(); 
         
         if (plan.payperiod == 0) {
-            this.logger.warning(`(LL) Teller schedule not started as Plan Payment Period is 0`);
+            const logline = "Teller schedule not started as Plan Payment Period is 0";
+            this.logger.warning(`(LL) ${logline}`);
+            this.dc.sendmsg(`${emoji.rotating_light} ${logline}`);
         }
         else {
             // When relay starts, we do not know how long had it been since last CRON run. 
@@ -94,7 +102,9 @@ export class Teller{
 
     public instantPay(): void {
         if (!this.active) {
-            this.logger.debug(`(LL) Post-init instant payment request granted.`);
+            const logline = "Post-init instant payment request granted.";
+            this.logger.warning(`(LL) ${logline}`);
+            this.dc.sendmsg(`${emoji.rotating_light} ${logline}`);
             this.getBill();
         }
     }
@@ -113,7 +123,7 @@ export class Teller{
         const plan = this.configHelper.getPresentPlan();
         plan.payperiod ||= 24; // prevent div/0 if payperiod=0 with postInitInstantPay=true
 
-        // Filter out delegate address in allocations query?
+        // Filter out bp address in allocations query?
         const exclude: string | undefined = this.configHelper.getConfig().excludeSelfFrTx ? this.configHelper.getConfig().delegateAddress : undefined;
         // Fetch the allocations from local db
         const bill: IBill[] = this.sqlite.getBill(plan.payperiod, plan.payoffset, now, exclude);
@@ -268,6 +278,7 @@ export class Teller{
         const walletBalance = pool.getPoolWallet(config.delegateAddress!)?.getBalance() || config.delegateWallet!.getBalance();
         if (walletBalance.isLessThan(txTotal.plus(dynfee))) {
             this.logger.critical(`(LL) Insufficient wallet balance to execute this pay order. Available:${Utils.formatSatoshi(walletBalance)} Required:${Utils.formatSatoshi(txTotal.plus(dynfee))}`);
+            this.dc.sendmsg(`${emoji.scream} Insufficient wallet balance to execute this pay order. Available:${inlineCode(Utils.formatSatoshi(walletBalance))} Required:${inlineCode(Utils.formatSatoshi(txTotal.plus(dynfee)))}`);
             return;
         }
         this.logger.debug(`(LL) Sufficient wallet balance to execute this pay order. Available:${Utils.formatSatoshi(walletBalance)} Required:${Utils.formatSatoshi(txTotal.plus(dynfee))}`);
@@ -284,9 +295,11 @@ export class Teller{
 
         if (result.accept.length > 0) {
             this.logger.debug(`(LL) Transaction txid ${result.accept[0]} successfully sent!`);
+            this.dc.sendmsg(`${emoji.atm} Sent transaction for reward payment tagged ${msg} with amount ${inlineCode(Utils.formatSatoshi(txTotal))} and fee ${inlineCode(Utils.formatSatoshi(dynfee))} | Txid: ${result.accept[0]}`);
         } 
         else {
             this.logger.critical("(LL) An error occurred sending transaction:");
+            this.dc.sendmsg(`${emoji.scream} An error occurred with transaction for reward payment tagged ${msg} with amount ${inlineCode(Utils.formatSatoshi(txTotal))} and fee ${inlineCode(Utils.formatSatoshi(dynfee))} | See logs for more information`);
             if (result.invalid.length > 0) {
                 this.logger.error(`(LL) ${result.errors![result.invalid[0]].type}: ${result.errors![result.invalid[0]].message}`);
             } else if (result.excess.length > 0) {

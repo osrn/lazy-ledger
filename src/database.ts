@@ -1,6 +1,9 @@
 import { Constants, Managers, Networks, Types, Utils } from "@solar-network/crypto";
 import { Container, Contracts } from "@solar-network/kernel";
 import SQLite3 from "better-sqlite3";
+import { inlineCode } from "discord.js";
+import { emoji } from "node-emoji";
+import { DiscordHelper, discordHelperSymbol } from "./discordhelper";
 import { IAllocation, IBill, IForgedBlock, IForgingStats, PayeeTypes } from "./interfaces";
 
 export const databaseSymbol = Symbol.for("LazyLedger<Database>");
@@ -10,6 +13,9 @@ const sqliteRunError: SQLite3.RunResult = { changes: -1, lastInsertRowid: 0 };
 export class Database {
     @Container.inject(Container.Identifiers.LogService) 
     private readonly logger!: Contracts.Kernel.Logger;
+
+    @Container.inject(discordHelperSymbol)
+    private readonly dc!: DiscordHelper;
 
     private database!: SQLite3.Database;
 
@@ -328,6 +334,7 @@ export class Database {
         } catch (error) {
             this.logger.critical("(LL) Error retrieving bill from the database");
             this.logger.critical(error.message);
+            this.dc.sendmsg(`${emoji.biohazard_sign} Error retrieving bill from the database`);
             return [];
         }
     }
@@ -341,6 +348,7 @@ export class Database {
         } catch (error) {
             this.logger.critical("(LL) Error retrieving unsettled allocations from the database");
             this.logger.critical(error.message);
+            this.dc.sendmsg(`${emoji.biohazard_sign} Error retrieving unsettled allocations from the database`);
             return [];
         }
     }
@@ -360,6 +368,7 @@ export class Database {
         } catch (error) {
             this.logger.critical(`(LL) Error writing txid ${txid} to allocations`);
             this.logger.critical(error.message);
+            this.dc.sendmsg(`${emoji.biohazard_sign} Error writing txid ${inlineCode(txid)} to allocations`);
             return sqliteRunError;
         }
     }
@@ -376,6 +385,7 @@ export class Database {
         } catch (error) {
             this.logger.critical(`(LL) DB Error clearing txid ${txid} from allocations`);
             this.logger.critical(error.message);
+            this.dc.sendmsg(`${emoji.biohazard_sign} Error clearing txid ${inlineCode(txid)} from allocations`);
             return sqliteRunError;
         }
 }
@@ -391,6 +401,7 @@ export class Database {
         } catch (error) {
             this.logger.critical(`(LL) Error stamping allocations with txid ${txid} as settled`);
             this.logger.critical(error.message);
+            this.dc.sendmsg(`${emoji.biohazard_sign} Error stamping allocations with txid ${inlineCode(txid)} as settled`);
             return sqliteRunError;
         }
 }
@@ -430,6 +441,7 @@ export class Database {
         } catch (error) {
             this.logger.critical("(LL) Error updating last vote allocations");
             this.logger.critical(error.message);
+            this.dc.sendmsg(`${emoji.biohazard_sign} Error updating last vote allocations`);
         }
     }
 
@@ -505,6 +517,7 @@ export class Database {
         } catch (error) {
             this.logger.critical("(LL) Error saving processed blocks to database");
             this.logger.critical(error.message);
+            this.dc.sendmsg(`${emoji.biohazard_sign} Error saving processed blocks to database`);
         }
     }
 
@@ -529,6 +542,7 @@ export class Database {
         } catch (error) {
             this.logger.critical("(LL) Error purging blocks from the database");
             this.logger.critical(error.message);
+            this.dc.sendmsg(`${emoji.biohazard_sign} Error purging blocks from the database`);
         }
     }
 
@@ -549,6 +563,7 @@ export class Database {
         } catch (error) {
             this.logger.critical("(LL) Error rolling back the database");
             this.logger.critical(error.message);
+            this.dc.sendmsg(`${emoji.biohazard_sign} Error rolling back the database`);
         }
     }
 

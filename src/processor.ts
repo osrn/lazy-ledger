@@ -1,11 +1,15 @@
 import { Constants, Enums, Interfaces, Utils } from "@solar-network/crypto";
 import { DatabaseService, Repositories } from "@solar-network/database";
 import { Container, Contracts, Enums as AppEnums, Utils as AppUtils } from "@solar-network/kernel";
+import { inlineCode } from "discord.js";
+import { emoji } from "node-emoji";
 import { IAllocation, IConfig, IForgedBlock, IMissedBlock, PayeeTypes } from "./interfaces";
 import { ConfigHelper, configHelperSymbol } from "./config_helper";
 import { Database, databaseSymbol } from "./database";
+import { DiscordHelper, discordHelperSymbol } from "./discordhelper";
 import { Teller, tellerSymbol } from "./teller";
 import { TxRepository, txRepositorySymbol } from "./tx_repository";
+import { name, version } from "./package-details.json";
 import { msToHuman } from "./utils";
 import {setTimeout} from "node:timers/promises";
 
@@ -21,6 +25,9 @@ export class Processor {
 
     @Container.inject(configHelperSymbol)
     private readonly configHelper!: ConfigHelper;
+
+    @Container.inject(discordHelperSymbol)
+    private readonly dc!: DiscordHelper;
 
     @Container.inject(Container.Identifiers.DatabaseService)
     private readonly database!: DatabaseService;
@@ -48,6 +55,8 @@ export class Processor {
     // private lastVoterAllocation!: IAllocation[];
 
     public async boot(): Promise<void> {
+        this.dc.sendmsg(`**${name} v${version}** booting ${emoji.high_brightness}`);
+        // this.dc.sendmsg(`**${name} v${version}** booting ${emoji.high_brightness}\n**config**\n${inlineCode(logline)}`);
         this.sqlite = this.app.get<Database>(databaseSymbol);
         this.teller = this.app.get<Teller>(tellerSymbol);
         this.init();
@@ -114,11 +123,15 @@ export class Processor {
         // (Cleaning from the lastForgedBlockHeight would have left rogue block heights in the local db, 
         // if new forging slot were to be later than the old one)
         if (this.lastProcessedBlockHeight > lastForgedBlockHeight) {
+            this.logger.warning(`(LL) Network fork&|rollback detected > Local database will be rolled back now.`);
+            this.dc.sendmsg(`${emoji.rotating_light} Network fork&|rollback detected > Local database will be rolled back now. See relay logs for detailed information.`);
             const lastForgedRound = AppUtils.roundCalculator.calculateRound(lastForgedBlockHeight);
             const block = await this.blockRepository.findByHeight(lastForgedRound.roundHeight);
 
             if (!block) {
-                this.logger.emergency(`(LL) Unexpected error. Need to roll back to height ${lastForgedRound.roundHeight} but no such height exists in block repository. lastForgedBlock: ${lastForgedBlock} lastProcessedBlockHeight: ${this.lastProcessedBlockHeight} lastForgedRound: ${lastForgedRound}`);
+                const logline = `Unexpected error during rollback! Calculated round height ${lastForgedRound.roundHeight} does not exist in repository`;
+                this.logger.emergency(`(LL) ${logline} | lastForgedBlock: ${lastForgedBlock} lastProcessedBlockHeight: ${this.lastProcessedBlockHeight} lastForgedRound: ${lastForgedRound}`);
+                this.dc.sendmsg(`${emoji.scream} ${logline}. See relay logs for detailed information.`);
                 throw new Error(`Unexpected error! Block to roll back to does not exist in repository`);
             }
             else {
@@ -150,8 +163,10 @@ export class Processor {
                 this.txWatchPool.delete(txid!);
             }
             else {
-                this.logger.critical(`(LL) Detected an unsettled allocation marked with an invalid tx ${txid}`);
-                //TODO: erase the TXid? or leave it to the delegate to inspect and manually delete
+                const logline = `Detected an unsettled allocation marked with an invalid tx`;
+                this.logger.critical(`(LL) ${logline} ${txid}`);
+                this.dc.sendmsg(`${emoji.rotating_light} ${logline} ${inlineCode(txid)}`);
+                //TODO: erase the TXid? or leave it to the bp to inspect and manually delete
                 //TODO: can be run as a periodic job, rather than running at relay restart only? (hence erased TXid can be paid in next payment run)
             }
         }
@@ -181,9 +196,11 @@ export class Processor {
                 // console.log(`(LL) received block reverted event at ${data.height} forged by ${data.generatorPublicKey}`)
 
                 if (this.configHelper.getConfig().delegatePublicKey === data.generatorPublicKey) {
-                    this.logger.debug(`(LL) Received block revert event for height ${data.height} previously forged by us`);
+                    const logline = "Received block revert event for a block previously forged by us > height:";
+                    this.logger.debug(`(LL) ${logline} ${data.height}`);
                     this.sqlite.purgeFrom(data.height, data.timestamp);
                     this.lastProcessedBlockHeight = this.sqlite.getHeight();
+                    this.dc.sendmsg(`${emoji.rotating_light} ${logline} ${inlineCode(data.height)}`);
                 }
 
                 // Restart Teller cron if a new plan is in effect by this height/time
@@ -229,7 +246,7 @@ export class Processor {
                         const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
                         const lastVoterAllocation: IAllocation[] = this.sqlite.getVoterAllocationAtHeight();
 
-                        if (lastForgedBlock && lastVoterAllocation.length > 0) { // always true unless brand new delegate
+                        if (lastForgedBlock && lastVoterAllocation.length > 0) { // always true unless brand new bp
                             const txRound = AppUtils.roundCalculator.calculateRound(txData.blockHeight!);
                             
                             if (txRound.round - lastForgedBlock.round <= 1) { // look ahead 1 round
@@ -284,7 +301,7 @@ export class Processor {
                     const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
                     const lastVoterAllocation: IAllocation[] = this.sqlite.getVoterAllocationAtHeight();
                     
-                    if (lastForgedBlock && lastVoterAllocation.length > 0) { // always true unless brand new delegate
+                    if (lastForgedBlock && lastVoterAllocation.length > 0) { // always true unless brand new bp
                         const txRound = AppUtils.roundCalculator.calculateRound(data.transaction.blockHeight);
                         
                         if (txRound.round - lastForgedBlock.round <= 1) { // look ahead 1 round
@@ -332,6 +349,7 @@ export class Processor {
                 // Alternative: keep another watchlist; but it could be more expensive then SQL
                 const { changes } = await this.sqlite.clearTransactionId(data.id);
                 this.logger.debug(`(LL) Cleared txid ${data.id} from ${changes} allocations`);
+                this.dc.sendmsg(`${emoji.rotating_light} Received transaction reverted event with txid ${data.id}`);
             },
         });
     }
@@ -357,7 +375,7 @@ export class Processor {
             const voters: { height:number; address: string; balance: Utils.BigNumber; percent: number; vote: Utils.BigNumber; validVote: Utils.BigNumber}[] = [];
 
             const lastChainedBlockHeight: number = await this.getLastBlockHeight();
-            this.logger.debug(`(LL) Last chained: #${lastChainedBlockHeight} | Now processing block round:${round.round } height:${block.height} timestamp:${block.timestamp} delegate: ${generator} reward:${block.reward} solfunds:${solfunds} block_fees:${block.totalFee} burned_fees:${block.burnedFee}`)
+            this.logger.debug(`(LL) Last chained: #${lastChainedBlockHeight} | Now processing block round:${round.round } height:${block.height} timestamp:${block.timestamp} bp: ${generator} reward:${block.reward} solfunds:${solfunds} block_fees:${block.totalFee} burned_fees:${block.burnedFee}`)
 
             const plan = this.configHelper.getPlan(block.height, block.timestamp);
             const config = this.configHelper.getConfig();
@@ -539,12 +557,15 @@ export class Processor {
 
             // roll back if local db is ahead of the network, purging from the start of the round we last forged
             if (this.lastProcessedBlockHeight > lastForgedBlockHeight || this.lastProcessedBlockHeight > lastChainedBlockHeight) {
-                // we should never arrive here as in the event of a fork, necessary actions will be taken at BlockEvent.Reverted event handler and local db will be rolled back properly
+                this.logger.warning(`(LL) Network fork&|rollback detected > Local database will be rolled back now.`);
+                this.dc.sendmsg(`${emoji.rotating_light} Network fork&|rollback detected > Local database will be rolled back now. See relay logs for detailed information.`);
+                    // we should never arrive here as in the event of a fork, necessary actions will be taken at BlockEvent.Reverted event handler and local db will be rolled back properly
                 const lastForgedRound = AppUtils.roundCalculator.calculateRound(lastForgedBlockHeight);
                 const block = await this.blockRepository.findByHeight(lastForgedRound.roundHeight);
 
                 if (!block) {
                     this.logger.emergency(`(LL) Unexpected error. Need to roll back to height ${lastForgedRound.roundHeight} but no such height exists in block repository. lastForgedBlock: ${lastForgedBlock} lastProcessedBlockHeight: ${this.lastProcessedBlockHeight} lastForgedRound: ${lastForgedRound}`);
+                    this.dc.sendmsg(`${emoji.scream} Unexpected error. Need to roll back to height ${lastForgedRound.roundHeight} but no such height exists in block repository. lastForgedBlock: ${lastForgedBlock} lastProcessedBlockHeight: ${this.lastProcessedBlockHeight} lastForgedRound: ${lastForgedRound}`);
                     throw new Error(`Unexpected error! Block to roll back to does not exist in repository`);
                 }
                 else {

@@ -30,7 +30,7 @@ export class ConfigHelper {
             "blockchain",
         );
         if ( !(this.config.delegate && walletRepository.findByUsername(this.config.delegate)) ) {
-            this.logger.emergency("(LL) Config error! Missing or invalid delegate username");
+            this.logger.emergency("(LL) Config error! Missing or invalid bp username");
             return false;
         }
         this.config.delegateWallet = walletRepository.findByUsername(this.config.delegate!);
@@ -49,7 +49,7 @@ export class ConfigHelper {
         }
         
         if (!(plans[0].reserves && plans[0].reserves[0].address !== undefined && plans[0].reserves[0].share !== undefined)) {
-            this.logger.emergency("(LL) Config error. Base plan must declare a reserve address and share - even if delegate self and 0");
+            this.logger.emergency("(LL) Config error. Base plan must declare a reserve address and share - even if bp wallet address and 0");
             return false;
         }
 
@@ -107,7 +107,7 @@ export class ConfigHelper {
         }
 
         // The first plan height must be zero - otherwise getPlan filter may return empty.
-        // Insert a placeholder plan with 0 allocation, with delegate username copied backward
+        // Insert a placeholder plan with 0 allocation, with bp username copied backward
         if (plans[0].height != 0) {
             const plan0: IPlan = JSON.parse(JSON.stringify(baseplan));
             plan0.reserves[0].address = plans[0].reserves[0].address;
@@ -133,7 +133,7 @@ export class ConfigHelper {
     }
 
     public getPlan(height: number, epochstamp: number): IPlan {
-        return Object.assign({},...(this.config.plans.filter( i => i.height! <= height && i.timestamp! <= AppUtils.formatTimestamp(epochstamp).unix )));
+        return Object.assign({},...(this.config.plans.filter( i => i.height! <= height && (i.timestamp! as number) <= AppUtils.formatTimestamp(epochstamp).unix )));
     }
 
     /**
@@ -159,12 +159,12 @@ export class ConfigHelper {
      */
     public getPresentPlan(): IPlan {
         const timeNow = Math.floor(Date.now() / 1000);
-        return Object.assign({},...(this.config.plans.filter( i => i.timestamp! <= timeNow )));
+        return Object.assign({},...(this.config.plans.filter( i => (i.timestamp! as number) <= timeNow )));
     }
 
     public hasPresentPlanChanged(): boolean {
         const present: IPlan = this.getPresentPlan();
-        if ( present.height! > this.lastHeight || present.timestamp! > this.lastTimestamp ) {
+        if ( present.height! > this.lastHeight || (present.timestamp! as number) > this.lastTimestamp ) {
             this.lastHeight = present.height!;
             this.lastTimestamp! = present.timestamp as number;
             return true;

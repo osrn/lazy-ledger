@@ -2,6 +2,7 @@ import { Container, Contracts, Providers } from "@solar-network/kernel";
 import { name, description, version } from "./package-details.json";
 import { ConfigHelper, configHelperSymbol } from "./config_helper";
 import { Database, databaseSymbol } from "./database";
+import { DiscordHelper, discordHelperSymbol } from "./discordhelper";
 import { Processor, processorSymbol } from "./processor";
 import { Teller, tellerSymbol } from "./teller";
 import { TxRepository, txRepositorySymbol } from "./tx_repository";
@@ -12,6 +13,7 @@ export class ServiceProvider extends Providers.ServiceProvider {
 
     public async register(): Promise<void> {
         this.app.bind<ConfigHelper>(configHelperSymbol).to(ConfigHelper).inSingletonScope();
+        this.app.bind<DiscordHelper>(discordHelperSymbol).to(DiscordHelper).inSingletonScope();
         this.app.bind<TxRepository>(txRepositorySymbol).to(TxRepository).inSingletonScope();;
         this.app.bind<Database>(databaseSymbol).to(Database).inSingletonScope();
         this.app.bind<Processor>(processorSymbol).to(Processor).inSingletonScope();
@@ -25,9 +27,10 @@ export class ServiceProvider extends Providers.ServiceProvider {
 
     public async boot(): Promise<void> {
         if (await this.app.get<ConfigHelper>(configHelperSymbol).boot()) {
-            this.app.get<Database>(databaseSymbol).boot();
-            this.app.get<Processor>(processorSymbol).boot();
-            this.app.get<Teller>(tellerSymbol).boot();
+            await this.app.get<DiscordHelper>(discordHelperSymbol).boot();
+            await this.app.get<Database>(databaseSymbol).boot();
+            await this.app.get<Processor>(processorSymbol).boot();
+            await this.app.get<Teller>(tellerSymbol).boot();
             this.logger.info("(LL) Plugin boot complete");
         }
         else

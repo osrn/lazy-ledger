@@ -90,8 +90,8 @@ Payment plans follows a milestone principle: higher index properties override th
                 "package": "@osrn/lazy-ledger",
                 "options": {
                     "enabled": true,
-                    "delegate": "delegate_username",
-                    "passphrase": "delegate wallet mnemonic phrase",
+                    "delegate": "block producer username",
+                    "passphrase": "block producer wallet mnemonic phrase",
                     "excludeSelfFrTx": true,
                     "mergeAddrsInTx": false,
                     "reservePaysFees": true,
@@ -100,6 +100,12 @@ Payment plans follows a milestone principle: higher index properties override th
                     "postInitInstantPay": false,
                     "antibot": true,
                     "whitelist": [],
+                    "discord": {
+                        "webhookId": "discord channel webhook id",
+                        "webhookToken": "discord channel webhook token",
+                        "mention": "discord userid to mention for alerts",
+                        "botname": "discord bot name to show in bot messages, 3-12 characters long. Default: Bot."
+                    },
                     "plans": [
                         {
                             "height": 90000,
@@ -150,18 +156,18 @@ Payment plans follows a milestone principle: higher index properties override th
 | Name | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
 | enabled | boolean | false | plugin enabled |
-| delegate | string | | delegate username |
+| delegate | string | | bp username |
 | plans | Array\<Plan\> | |reward sharing plans |
-| passphrase | string | | delegate wallet passphrase |
-| secondpass | string | | delegate wallet second passphrase |
-| excludeSelfFrTx | boolean | true |exclude delegate address from payment transaction if reserve=delegate or delegate self voting |
+| passphrase | string | | bp wallet passphrase |
+| secondpass | string | | bp wallet second passphrase |
+| excludeSelfFrTx | boolean | true |exclude bp wallet address from payment transaction if reserve address=bp address or bp self voting |
 | mergeAddrsInTx | boolean | false | pivot payment transaction on recipient address. Best to use when catching up with several past due payments to reduce transaction size, hence the tx fee |
-| reservePaysFees | boolean | true | deduct transaction fee from the first reserve address allocation (at the time of actual transaction) \| delegate wallet needs sufficient funds for paying fees otherwise |
+| reservePaysFees | boolean | true | deduct transaction fee from the first reserve address allocation (at the time of actual transaction) \| bp wallet needs sufficient funds for paying fees otherwise |
 | shareEarnedFees | boolean | false | include earned transaction fees (=unburned 10%) in reserve, voter and donee allocations |
-| reserveGetsFees | boolean | false | when earned fees are not shared, allocate transaction fees to the first reserve address \| stays in delegate wallet otherwise) |
+| reserveGetsFees | boolean | false | when earned fees are not shared, allocate transaction fees to the first reserve address \| stays in bp wallet otherwise) |
 | postInitInstantPay | boolean | false | make a payment run immediately after plugin starts following initial sync |
 | antibot | boolean | true | anti-bot processing active if true |
-| whitelist | string[] | [] | addresses exempt from anti-bot processing (delegate address is automatically whitelisted) |
+| whitelist | string[] | [] | addresses exempt from anti-bot processing (bp wallet address is automatically whitelisted) |
 
 ### Plan
 
@@ -347,7 +353,7 @@ solar ll:rollback 100000
 ## Logs
 Uses the core logger utility with (LL) prefix.<br>
 Use `pm2 logs solar-relay` or `less -R +F ~/.pm2/logs/solar-relay-out.log` to watch the logs in real time.<br>
-Use `grep "(LL)" ~/.pm2/logs/solar-relay-out.log` or `less -R ~/.pm2/logs/solar-relay-out.log` then less command `&(LL)` to filter for Lazy-Ledger output.
+Use `grep "(LL)" ~/.pm2/logs/solar-relay-out.log` or `less -R ~/.pm2/logs/solar-relay-out.log` then less command `&\(LL\)` to filter for Lazy-Ledger output.
 
 ```log
 --- boot
@@ -360,7 +366,7 @@ Use `grep "(LL)" ~/.pm2/logs/solar-relay-out.log` or `less -R ~/.pm2/logs/solar-
 --- initial sync
 (LL) Starting (initial|catch-up) sync ...
 (LL) Received batch of 133 blocks to process | heights: 1794003,1794102,1794143,1794166,1794221,1794263,1794318,...
-(LL) Processing block | round:33850 height:1794003 timestamp:14361288 delegate: osrn reward:1237500000 solfunds:61875000 block_fees:0 burned_fees:0
+(LL) Processing block | round:33850 height:1794003 timestamp:14361288 bp: osrn reward:1237500000 solfunds:61875000 block_fees:0 burned_fees:0
 (LL) block processed in 0h:04':19".813ms
 (LL) Completed processing batch of 1 blocks in 0h:00':04".498ms
 (LL) Sync complete | lastChainedBlockHeight:1801089 lastForgedBlockHeight:1801051 lastStoredBlockHeight:1801051
@@ -370,7 +376,7 @@ Use `grep "(LL)" ~/.pm2/logs/solar-relay-out.log` or `less -R ~/.pm2/logs/solar-
 (LL) Received new block applied event at 1805087 forged by us
 (LL) Starting  sync ...
 (LL) Received batch of 1 blocks to process | heights: 1805087
-(LL) Processing block | round:34059 height:1805087 timestamp:14449968 delegate: osrn reward:1275000000 solfunds:63750000 block_fees:0 burned_fees:0
+(LL) Processing block | round:34059 height:1805087 timestamp:14449968 bp: osrn reward:1275000000 solfunds:63750000 block_fees:0 burned_fees:0
 (LL) Completed processing batch of 1 blocks in 0h 00' 01" 533ms
 (LL) Sync complete | lastChainedBlockHeight:1805087 lastForgedBlockHeight:1805087 lastStoredBlockHeight:1805087
 --- Anti-bot
@@ -381,7 +387,7 @@ Use `grep "(LL)" ~/.pm2/logs/solar-relay-out.log` or `less -R ~/.pm2/logs/solar-
 --- Payment
 (LL) Teller run starting at Mon, 12 Sep 2022 00:08:00 GMT
 (LL) Fetched 250 bill items from the database
-(LL) Bill reduced to 250 items after filtering out delegate address
+(LL) Bill reduced to 250 items after filtering out bp address
 (LL) Bill produced 2 pay-orders after grouping by pay-period
 (LL) Pay-order will be processed in 1 chunks of transactions
 (LL) Passing transaction to Pool Processor | {"fee":"17603842","headerType":0,"id":"71f63492736bca143ae5cac1f4effd0ffb2c9561770b59dfcc1e572f993fac1e","memo":"osrn rewards for 2022-09-10-1/1","s
@@ -399,7 +405,15 @@ You are welcome to make any other accuracy checks by direct database query.
 
 ## Version Info
 ### Release 0.2.0
-#### -next.0
+#### -next.1 discord integration
+**Changes**
+- discord notifications 
+    - when plugin boots
+    - when reward payments done
+    - for critical errors or warnings
+- replaced term `delegate` with `bp` whereever applicable
+
+#### -next.0 performance improvements and bug squash
 **Changes**
 - **Breaking!** moved sqlite database file location. See upgrade instructions below.
 - fixed plan payperiod out of bounds auto correction condition
@@ -410,7 +424,7 @@ You are welcome to make any other accuracy checks by direct database query.
 - package `delay-5.0.0` replaced with `node:timers/promises`
 - cleanup obselete comments and dead code
 
-> First time boot duration may be prolonged due to creation of new indexes after the upgrade
+> <sup>(*)</sup> First time boot duration may be prolonged due to creation of new indexes after the upgrade
 
 **Before upgrading to this release**
 1. stop relay `pm2 stop solar-relay`
@@ -440,20 +454,20 @@ cd ~
 
 - Fixed issue `RangeError [ERR_OUT_OF_RANGE] exception when serializing transaction`<br>
 
-When `reservePaysFees` option is enabled, the transaction fee is deducted from the reserve's reward allocation when constructing the rewards payment transaction. This is a preference to ensure rewards due can be paid even if the delegate wallet is empty to start with.<br>
+When `reservePaysFees` option is enabled, the transaction fee is deducted from the reserve's reward allocation when constructing the rewards payment transaction. This is a preference to ensure rewards due can be paid even if the bp wallet is empty to start with.<br>
 
 Exception is raised due to negative transfer amount and the issue surfaces under a potentially rare condition: 
 1. reservePaysFees option enabled (default)
-1. delegate reserve wallet is self voting, 
+1. bp reserve wallet is self voting, 
 1. in populated pay-order, reserve wallet voter allotment (payeeType=voter) comes before reserve wallet reserve allotment (payeeType=reserve) in the array
 1. reserve wallet voter allocation is less than the required transaction fee :beetle:
 
 The issue is now fixed and tx fee is deducted only from reserve's allocation (payeeType=0) and when it can cover the fee.<br>
 The algorithm is also improved in order to:
 - Try subsequent reserve wallets if first one cannot cover the costs
-- Log a warning if none of the reserve wallet allocations meet the criteria (in which case tx fee will be paid from the delegate wallet as if  `reservePaysFees=false`).
+- Log a warning if none of the reserve wallet allocations meet the criteria (in which case tx fee will be paid from the bp wallet as if  `reservePaysFees=false`).
 
-:warning: Important : Moving forward, tx fee will not be deducted from any reserve allocations when `mergeAddrsInTx=true`, consequently requiring delegate wallet to have enough funds to pay full rewards+txfee.
+:warning: Important : Moving forward, tx fee will not be deducted from any reserve allocations when `mergeAddrsInTx=true`, consequently requiring bp wallet to have enough funds to pay full rewards+txfee.
 
 ### Release 0.1.1
 **Changes**
@@ -492,15 +506,18 @@ requires `@solar-network/: ^4.1.0 || ^4.1.0-next.5`
 
 ## Roadmap
 Not necessarily in this order;
+
 - [ ] Seperate configuration from app.json
 - [ ] Better logging
+- [ ] Reload config without relay restart
 - [ ] Web|console dashboard
-- [ ] Telegram|Discord integration
-- [ ] Database backup and periodic cleanup
-- [ ] Transaction memo customization
+- [ ] Database backup and periodic cleanup
+- [ ] Custom transaction memo
 - [ ] Payment periods > 24h
+- [ ] Command to list antibot detected vote hoppers
+- [x] ~~Telegram~~|Discord integration
 
-See the [open issues](https://github.com/osrn/lazy-ledger/issues) for a full list of proposed features (and known issues).
+See [open issues](https://github.com/osrn/lazy-ledger/issues) for a full list of proposed features (and known issues).
 
 ## Contributing
 
@@ -514,7 +531,7 @@ If you have a suggestion for improvement open an issue with the tag "enhancement
 ## Acknowledgments
 
 * [Alessiodf](https://github.com/alessiodf/) Solar Core Developer, aka Gym, for his help and guidance, especially navigating the Solar Core maze and his insights on inner working principles
-* [Galperins4](https://github.com/galperins4/) Solar Delegate, aka Goose, for many concepts and ideas initially developed in his TBW scripts
+* [Galperins4](https://github.com/galperins4/) Solar Block Producer, aka Goose, for many concepts and ideas initially developed in his TBW scripts
 
 ## License
 

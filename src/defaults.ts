@@ -1,7 +1,7 @@
 export const defaults = {
     enabled: false,
-    delegate: "delegate",
-    passphrase: "delegate wallet mnemonic phrase",
+    delegate: "bp",
+    passphrase: "bp wallet mnemonic phrase",
     excludeSelfFrTx: true,
     mergeAddrsInTx: false,
     reservePaysFees: true,
@@ -10,6 +10,7 @@ export const defaults = {
     postInitInstantPay: false,
     antibot: true,
     whitelist: [],
+    discord: {},
     plans: [
         {
             height: 0,
