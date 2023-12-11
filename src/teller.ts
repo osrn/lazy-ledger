@@ -297,11 +297,11 @@ export class Teller{
 
         if (result.accept.length > 0) {
             this.logger.debug(`(LL) Transaction txid ${result.accept[0]} successfully sent!`);
-            this.dc.sendmsg(`${emoji.atm} Sent transaction for reward payment tagged ${msg} with amount ${inlineCode(Utils.formatSatoshi(txTotal))} and fee ${inlineCode(Utils.formatSatoshi(dynfee))} | Txid: ${result.accept[0]}`);
+            this.dc.sendmsg(`${emoji.atm} Sent transaction for reward payment tagged ${inlineCode(msg)} with amount ${inlineCode(Utils.formatSatoshi(txTotal))} and fee ${inlineCode(Utils.formatSatoshi(dynfee))} | Txid: ${result.accept[0]}`);
         } 
         else {
             this.logger.critical("(LL) An error occurred sending transaction:");
-            this.dc.sendmsg(`${emoji.scream} An error occurred with transaction for reward payment tagged ${msg} with amount ${inlineCode(Utils.formatSatoshi(txTotal))} and fee ${inlineCode(Utils.formatSatoshi(dynfee))} | See logs for more information`);
+            this.dc.sendmsg(`${emoji.scream} An error occurred with transaction for reward payment tagged ${inlineCode(msg)} with amount ${inlineCode(Utils.formatSatoshi(txTotal))} and fee ${inlineCode(Utils.formatSatoshi(dynfee))} | See logs for more information`);
             if (result.invalid.length > 0) {
                 this.logger.error(`(LL) ${result.errors![result.invalid[0]].type}: ${result.errors![result.invalid[0]].message}`);
             } else if (result.excess.length > 0) {

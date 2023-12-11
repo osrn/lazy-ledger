@@ -226,7 +226,7 @@ Flags
 --json       Short for format="json". Overrides --format
 --raw        Short for format="raw". Overrides --format and --json
 ```
-```bash
+```
 Retrieving data from last block ...
 [
   {
@@ -267,6 +267,8 @@ Flags
 ```
 ```bash
 solar ll:lastpaid
+```
+```
 Retrieving info about the last paid forged-block allocation ...
 {
   round: 24583,
@@ -286,6 +288,8 @@ Flags:
 ```
 ```bash
 solar ll:pending
+```
+```
 Retrieving pending allocations since last payment ...
 ┌───────────────┬─────────────┐
 │    (index)    │   Values    │
@@ -311,11 +315,13 @@ shows voter commitment (voting balance not reduced) during a time frame
 Flags
 --start      Start date (YYYY-MM-DDTHH:mm:ss.sssZ | YYYY-MM-DDTHH:mm:ss.sss+-hh:mm), included.
 --end        End date (YYYY-MM-DDTHH:mm:ss.sssZ | YYYY-MM-DDTHH:mm:ss.sss+-hh:mm), excluded.
---v          Show detailed information for each voter```
+--v          Show detailed information for each voter
 ```
-```
+```bash
 solar ll:commitment --start=2022-09-16T18:00:00Z --end=2022-09-18 -v
-(LL) Opening database connection @ /home/solar/.local/share/solar-core/testnet/lazy-ledger.sqlite
+```
+```
+(LL) Opening database connection @ /home/solar/.local/share/solar-core/testnet/lltbw/lazy-ledger.sqlite
 Range contains 255 blocks and bounds are:
 [date)     : [Fri Sep 16 2022 21:00:00 GMT+0300 (GMT+03:00), Sun Sep 18 2022 03:00:00 GMT+0300 (GMT+03:00))
 [unixstamp): [1663351200, 1663459200)
@@ -351,6 +357,33 @@ Voters and commitment details:
   voteChanges: 30
 }
 ```
+---
+**`solar ll:antibot --start <datetime> [--end <datetime>] [--raw | --json | --format="std | json | raw"]`**<br>
+lists antibot detected voters, hit frequency and antibot adjusted allotments total during a time frame
+```
+Flags
+--start      Start date (YYYY-MM-DDTHH:mm:ss.sssZ | YYYY-MM-DDTHH:mm:ss.sss+-hh:mm), included.
+--end        End date (YYYY-MM-DDTHH:mm:ss.sssZ | YYYY-MM-DDTHH:mm:ss.sss+-hh:mm), excluded.
+--format     Display output as standard, formatted JSON or raw
+--json       Short for format="all". Overrides --format
+--raw        Short for format="raw". Overrides --format and --json
+```
+```bash
+solar ll:antibot --start=2023-12-01T00:00:00Z
+```
+```
+(LL) Opening database connection @ /home/solar/.local/share/solar-core/testnet/lltbw/lazy-ledger.sqlite
+Antibot has detected 1 addresses during the given timeframe:
+[date)     : [2023-01-01T00:00:00.000Z, 2023-12-11T20:23:14.304Z)
+[unixstamp): [1672531200, 1702326194)
+┌────────────────────────────────────┬──────┬──────────┐
+│              (index)               │ hits │ allotted │
+├────────────────────────────────────┼──────┼──────────┤
+│ D5amxBtrXduR8M97xA2KvU1zp5UnJC2oZR │  1   │ '0 tSXP' │
+└────────────────────────────────────┴──────┴──────────┘
+```
+
+
 ---
 **`solar ll:rollback <height>`**<br>
 deletes all records starting with (and including) the first block of the round for the given height.
@@ -430,17 +463,21 @@ mv lazy-ledger.sqlite* lltbw
 cd ~
 ```
 
-**To upgrade to this release**
-1. Pull from upstream and build. It is safe and recommended to remove the delay package first.
+**To upgrade to this release** 
+1. Pull from upstream, update dependencies and build.
 ```bash
 cd  ~/solar-core/plugins/lazy-ledger
 . ~/.solar/.env
 git pull
-pnpm rm delay
+CFLAGS="$CFLAGS" CPATH="$CPATH" LDFLAGS="$LDFLAGS" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" pnpm install
 pnpm build
 cd ~
 ```
-2. create a config file and move your config from `app.json` to `your-config.json` as described above in sample configuration
+2. create a config file and move your config options from `app.json` to `your-config.json` as described above in [sample configuration section](#configuration)
+
+#### -next.4 new cli command `antibot`
+**Changes**
+- added option to list antibot detected voters, hit frequency and antibot adjusted allotments total during a time frame.
 
 #### -next.3 custom reward transaction memo
 **Changes**
@@ -531,12 +568,12 @@ requires `@solar-network/: ^4.1.0 || ^4.1.0-next.5`
 
 ## Roadmap
 Not necessarily in this order;
-- [ ] Command to list antibot detected vote hoppers
 - [ ] Database backup and periodic cleanup
 - [ ] Better logging
 - [ ] Reload config without relay restart
 - [ ] Web|console dashboard
 - [ ] Payment periods > 24h
+- [X] Command to list antibot detected vote hoppers
 - [X] Custom transaction memo
 - [X] Move configuration from app.json to own config.json
 - [X] ~~Telegram~~|Discord integration

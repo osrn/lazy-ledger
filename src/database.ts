@@ -236,6 +236,50 @@ export class Database {
         return result;
     }
 
+    /**
+     * List antibot detected voters, hit frequency and antibot adjusted allotments total during a time frame
+     * @param start 
+     * @param end 
+     * @param network 
+     * @returns 
+     */
+    public getAntibot(start: number, end: number, network?: Types.NetworkName): {address: string; hits: number; allotted: Utils.BigNumber}[] {
+        if (typeof network !== "undefined" && Object.keys(Networks).includes(network!)) {
+            Managers.configManager.setFromPreset(network!);
+        } 
+        const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
+        const result = this.database.prepare(
+           `SELECT address, COUNT(address) as hits, SUM(allotment)/${Constants.SATOSHI}.0 as allotted
+            FROM (
+                SELECT 
+                    al.address, 
+                    al.orgBalance, 
+                    al.balance,
+                    al.orgVotePercent,
+                    al.votePercent,
+                    al.allotment
+                FROM allocations al 
+                INNER JOIN (
+                    --- retrieve block timestamp, round, height, netreward earned, antibot adjusted votes during the timeframe
+                    SELECT 
+                        timestamp, 
+                        height
+                    FROM forged_blocks
+                    WHERE (${t0} + "timestamp") >= ${start}
+                      AND (${t0} + "timestamp") < ${end}
+                ) AS fb ON al.height = fb.height
+                WHERE 
+                    CAST(al.balance AS INTEGER) < CAST(al.orgBalance AS INTEGER)
+                    OR al.votePercent < al.orgVotePercent
+            ) GROUP BY address ORDER BY address ASC;`)
+        .all();
+        
+        // convert allotted to bignumber
+        result.forEach( e => e.allotted = Utils.BigNumber.make(e.allotted) );
+
+        return result;
+    }
+
     public getMissed(type: string, username: string, height: number): { height: number; timestamp: number }[] {
         const result: { height: number; timestamp: number }[] = [];
         if (type === "slots") {
