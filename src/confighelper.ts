@@ -252,6 +252,8 @@ const validConfig = Joi.object({
     delegate: joiRules.bpUsername.required(),
     passphrase: joiRules.mnemonic.required(),
     secondpass: joiRules.mnemonic.allow(null, '').optional(),
+    rewardMemo: joiRules.txMemo.optional(),
+    rewardStamp: Joi.boolean().optional(),
     excludeSelfFrTx: Joi.boolean().optional(),
     mergeAddrsInTx: Joi.boolean().optional(),
     reservePaysFees: Joi.boolean().optional(),

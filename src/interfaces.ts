@@ -6,6 +6,8 @@ export interface IConfig extends Record<string, any> {
     plans: Array<IPlan>;        // reward sharing plans
     passphrase: string;         // bp wallet mnemonic passphrase
     secondpass: string;         // bp wallet second passphrase
+    rewardMemo: string;         // reward transaction memo
+    rewardStamp: boolean;       // append reward time period stamp to the memo
     excludeSelfFrTx: boolean;   // include bp in transaction if reserve=bp or bp self voting
     mergeAddrsInTx: boolean;    // summarize payments to same recipient
     reservePaysFees: boolean;   // deduct transaction fee from the first reserve address allocation (at the time of actual payment) | bp wallet needs sufficient funds for fee otherwise

@@ -99,11 +99,13 @@ Payment plans follows a milestone principle: higher index properties override th
     },
 ```
 
-### Sample configuration > app.json
+### Sample configuration > config.json
 ```json
 {
     "delegate": "block producer username",
     "passphrase": "block producer wallet mnemonic phrase",
+    "rewardMemo": "",
+    "rewardStamp": true,
     "excludeSelfFrTx": true,
     "mergeAddrsInTx": false,
     "reservePaysFees": true,
@@ -169,6 +171,8 @@ Payment plans follows a milestone principle: higher index properties override th
 | plans | Array\<Plan\> | |reward sharing plans |
 | passphrase | string | | bp wallet passphrase |
 | secondpass | string | | bp wallet second passphrase |
+| rewardMemo | string | _**bp username**_ rewards | reward transaction memo |
+| rewardStamp | boolean | true | append reward time period stamp to the memo e.g. `for 2023-12-10-1/24` |
 | excludeSelfFrTx | boolean | true |exclude bp wallet address from payment transaction if reserve address=bp address or bp self voting |
 | mergeAddrsInTx | boolean | false | pivot payment transaction on recipient address. Best to use when catching up with several past due payments to reduce transaction size, hence the tx fee |
 | reservePaysFees | boolean | true | deduct transaction fee from the first reserve address allocation (at the time of actual transaction) \| bp wallet needs sufficient funds for paying fees otherwise |
@@ -415,34 +419,6 @@ You are welcome to make any other accuracy checks by direct database query.
 ## Version Info
 
 ### Release 0.2.0
-
-#### -next.2 config file
-**Changes**
-- **Breaking!** separated configuration from Solar app.json. Now app.json only defines whether the plugin is enabled and location of the configuration file.
-- config options remains the same.
-- config options are more strictly validated.
-
-#### -next.1 discord integration
-**Changes**
-- discord notifications 
-    - when plugin boots
-    - when reward payments done
-    - for critical errors or warnings
-- replaced term `delegate` with `bp` whereever applicable
-
-#### -next.0 performance improvements and bug squash
-**Changes**
-- **Breaking!** moved sqlite database file location. See upgrade instructions below.
-- fixed plan payperiod out of bounds auto correction condition
-- fixed issue plan mincap creation when plan does not specify one
-- added new indexes to the sqlite database<sup>(*)</sup>
-- added version information to boot time log messages
-- increased block processing speed when blocks are being retrieved in real time (not catching a backlog) by utilizing the current information available from the blockRepository rather than replaying the transactions happened since last block forged on top of the state last saved in the local sqlite database
-- package `delay-5.0.0` replaced with `node:timers/promises`
-- cleanup obselete comments and dead code
-
-> <sup>(*)</sup> First time boot duration may be prolonged due to creation of new indexes after the upgrade
-
 **Before upgrading to this release**
 1. stop relay `pm2 stop solar-relay`
 1. backup your database `tar -cPzf ~/lazy-ledger.backup-$(date +%Y%m%d-%H%M%S).tar.gz ~/.local/share/solar-core/{mainnet|testnet}/lazy-ledger*`
@@ -464,6 +440,38 @@ pnpm rm delay
 pnpm build
 cd ~
 ```
+2. create a config file and move your config from `app.json` to `your-config.json` as described above in sample configuration
+
+#### -next.3 custom reward transaction memo
+**Changes**
+- New configuration options rewardMemo, rewardStamp.
+
+#### -next.2 config file
+**Changes**
+- **Breaking!** separated configuration from Solar app.json. Now app.json only defines whether the plugin is enabled and location of the configuration file.
+- config options remains the same.
+- stricter config options validation.
+
+#### -next.1 discord integration
+**Changes**
+- discord notifications 
+    - when plugin boots
+    - when reward payments done
+    - for critical errors or warnings
+- replaced term `delegate` with `bp` whereever applicable
+
+#### -next.0 performance improvements and bug squash
+**Changes**
+- **Breaking!** moved sqlite database file location. See upgrade instructions below.
+- fixed plan payperiod out of bounds auto correction condition
+- fixed issue plan mincap creation when plan does not specify one
+- added new indexes to the sqlite database<sup>(*)</sup>
+- added version information to boot time log messages
+- increased block processing speed when blocks are being retrieved in real time (not catching a backlog) by utilizing the current information available from the blockRepository rather than replaying the transactions happened since last block forged on top of the state last saved in the local sqlite database
+- package `delay-5.0.0` replaced with `node:timers/promises`
+- cleanup obselete comments and dead code
+
+> <sup>(*)</sup> First time boot duration may be prolonged due to creation of new indexes after the upgrade
 
 
 ### Release 0.1.2
@@ -523,13 +531,13 @@ requires `@solar-network/: ^4.1.0 || ^4.1.0-next.5`
 
 ## Roadmap
 Not necessarily in this order;
-- [ ] Custom transaction memo
 - [ ] Command to list antibot detected vote hoppers
 - [ ] Database backup and periodic cleanup
 - [ ] Better logging
 - [ ] Reload config without relay restart
 - [ ] Web|console dashboard
 - [ ] Payment periods > 24h
+- [X] Custom transaction memo
 - [X] Move configuration from app.json to own config.json
 - [X] ~~Telegram~~|Discord integration
 

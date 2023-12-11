@@ -1,6 +1,7 @@
 export const defaults = {
     delegate: "bp",
     passphrase: "bp wallet mnemonic phrase",
+    rewardStamp: true,
     excludeSelfFrTx: true,
     mergeAddrsInTx: false,
     reservePaysFees: true,

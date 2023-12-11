@@ -181,11 +181,13 @@ export class Teller{
                 }
                 // Unless mergeAddrsInTx enabled, chunk entries has the same y, m, d, q. Get the first entry to compose the memo
                 const fe = chunk[0];
-                let msgStamp = `${fe.y}-${fe.m}-${fe.d}-${fe.q}/${24/plan.payperiod}`;
-                let msg = `${this.configHelper.getConfig().delegate} rewards for ${msgStamp}`;
-                if (this.configHelper.getConfig().mergeAddrsInTx) {
-                    msgStamp = "";
-                    msg = `${this.configHelper.getConfig().delegate} reward sharing`;
+                let msg = this.configHelper.getConfig()?.rewardMemo ?
+                    this.configHelper.getConfig().rewardMemo :
+                    `${this.configHelper.getConfig().delegate} rewards`;
+                const msgStamp = this.configHelper.getConfig().mergeAddrsInTx ? "" : `${fe.y}-${fe.m}-${fe.d}-${fe.q}/${24/plan.payperiod}`;
+
+                if (this.configHelper.getConfig()?.rewardStamp && !this.configHelper.getConfig().mergeAddrsInTx) {
+                    msg = `${msg} for ${msgStamp}`;
                 }
 
                 // Pass to payment processor
