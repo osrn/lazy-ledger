@@ -4,7 +4,7 @@ import { emoji } from "node-emoji";
 import { IBill, PayeeTypes } from "./interfaces";
 import { Database, databaseSymbol } from "./database";
 import { inlineCode } from "discord.js";
-import { ConfigHelper, configHelperSymbol } from "./config_helper";
+import { ConfigHelper, configHelperSymbol } from "./confighelper";
 import { DiscordHelper, discordHelperSymbol } from "./discordhelper";
 import { Processor } from "./processor";
 import { CronJob } from "cron";

@@ -1,6 +1,6 @@
 import { Container, Contracts, Providers } from "@solar-network/kernel";
 import { name, description, version } from "./package-details.json";
-import { ConfigHelper, configHelperSymbol } from "./config_helper";
+import { ConfigHelper, configHelperSymbol } from "./confighelper";
 import { Database, databaseSymbol } from "./database";
 import { DiscordHelper, discordHelperSymbol } from "./discordhelper";
 import { Processor, processorSymbol } from "./processor";

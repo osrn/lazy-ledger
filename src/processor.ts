@@ -4,7 +4,7 @@ import { Container, Contracts, Enums as AppEnums, Utils as AppUtils } from "@sol
 import { inlineCode } from "discord.js";
 import { emoji } from "node-emoji";
 import { IAllocation, IConfig, IForgedBlock, IMissedBlock, PayeeTypes } from "./interfaces";
-import { ConfigHelper, configHelperSymbol } from "./config_helper";
+import { ConfigHelper, configHelperSymbol } from "./confighelper";
 import { Database, databaseSymbol } from "./database";
 import { DiscordHelper, discordHelperSymbol } from "./discordhelper";
 import { Teller, tellerSymbol } from "./teller";

@@ -1,6 +1,6 @@
 import { Container, Contracts } from "@solar-network/kernel";
 import { userMention, WebhookClient } from "discord.js";
-import { ConfigHelper, configHelperSymbol } from "./config_helper";
+import { ConfigHelper, configHelperSymbol } from "./confighelper";
 import { IConfig } from "./interfaces";
 import { emoji } from "node-emoji";
 import { inspect } from "util";

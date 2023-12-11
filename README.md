@@ -405,6 +405,9 @@ You are welcome to make any other accuracy checks by direct database query.
 
 ## Version Info
 ### Release 0.2.0
+#### -next.2 
+**Changes**
+
 #### -next.1 discord integration
 **Changes**
 - discord notifications 
