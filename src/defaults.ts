@@ -1,5 +1,4 @@
 export const defaults = {
-    enabled: false,
     delegate: "bp",
     passphrase: "bp wallet mnemonic phrase",
     excludeSelfFrTx: true,

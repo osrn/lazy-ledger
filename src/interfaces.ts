@@ -2,7 +2,6 @@ import { Contracts } from "@solar-network/kernel";
 import { Utils } from "@solar-network/crypto";
 
 export interface IConfig extends Record<string, any> {
-    enabled: boolean;
     delegate: string;           // bp username
     plans: Array<IPlan>;        // reward sharing plans
     passphrase: string;         // bp wallet mnemonic passphrase
@@ -16,9 +15,9 @@ export interface IConfig extends Record<string, any> {
     antibot: boolean;           // anti-bot processing active if true
     whitelist: string[];        // addresses exempt from anti-bot processing (bp address is automatically whitelisted)
     discord?: {webhookId: string, webhookToken: string, mention: string, botname: string};
-    delegateWallet?: Contracts.State.Wallet; // for internal use
-    delegateAddress?: string;   // for internal use
-    delegatePublicKey?: string; // for internal use
+    bpWallet?: Contracts.State.Wallet; // for internal use
+    bpWalletAddress?: string;   // for internal use
+    bpWalletPublicKey?: string; // for internal use
 }
 
 export interface IPlan extends Record<string, any> {

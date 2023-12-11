@@ -124,7 +124,7 @@ export class Teller{
         plan.payperiod ||= 24; // prevent div/0 if payperiod=0 with postInitInstantPay=true
 
         // Filter out bp address in allocations query?
-        const exclude: string | undefined = this.configHelper.getConfig().excludeSelfFrTx ? this.configHelper.getConfig().delegateAddress : undefined;
+        const exclude: string | undefined = this.configHelper.getConfig().excludeSelfFrTx ? this.configHelper.getConfig().bpWalletAddress : undefined;
         // Fetch the allocations from local db
         const bill: IBill[] = this.sqlite.getBill(plan.payperiod, plan.payoffset, now, exclude);
         this.logger.debug(`(LL) Fetched ${bill.length} allocations from the database`);
@@ -240,7 +240,7 @@ export class Teller{
         const config = this.configHelper.getConfig();
         const pool = this.app.get<Contracts.Pool.Service>(Container.Identifiers.PoolService);
         
-        let nonce = pool.getPoolWallet(config.delegateAddress!)?.getNonce().plus(1) || config.delegateWallet!.getNonce().plus(1);
+        let nonce = pool.getPoolWallet(config.bpWalletAddress!)?.getNonce().plus(1) || config.bpWallet!.getNonce().plus(1);
         const dynfee = this.getDynamicFee(payments.length, msg.length, !!config.secondpass);
 
         const transaction = Transactions.BuilderFactory.multiPayment()
@@ -275,7 +275,7 @@ export class Teller{
         if (config.reservePaysFees && !config.mergeAddrsInTx && !feeDeducted) {
             this.logger.warning(`(LL) Chunk does not contain a reserve address or none of the reserve allocations are adequate to pay the transaction fee (${Utils.formatSatoshi(dynfee)}). Tx fee should be covered by the delegate wallet!`);
         }
-        const walletBalance = pool.getPoolWallet(config.delegateAddress!)?.getBalance() || config.delegateWallet!.getBalance();
+        const walletBalance = pool.getPoolWallet(config.bpWalletAddress!)?.getBalance() || config.bpWallet!.getBalance();
         if (walletBalance.isLessThan(txTotal.plus(dynfee))) {
             this.logger.critical(`(LL) Insufficient wallet balance to execute this pay order. Available:${Utils.formatSatoshi(walletBalance)} Required:${Utils.formatSatoshi(txTotal.plus(dynfee))}`);
             this.dc.sendmsg(`${emoji.scream} Insufficient wallet balance to execute this pay order. Available:${inlineCode(Utils.formatSatoshi(walletBalance))} Required:${inlineCode(Utils.formatSatoshi(txTotal.plus(dynfee)))}`);

@@ -179,7 +179,7 @@ export class Processor {
                     await setTimeout(100);
                 }
                 
-                if (this.configHelper.getConfig().delegatePublicKey === data.generatorPublicKey) {
+                if (this.configHelper.getConfig().bpWalletPublicKey === data.generatorPublicKey) {
                     this.logger.debug(`(LL) Received new block applied event at ${data.height} forged by us`);
                     this.sync();
                 }
@@ -195,7 +195,7 @@ export class Processor {
             handle: async ({ data }) => {
                 // console.log(`(LL) received block reverted event at ${data.height} forged by ${data.generatorPublicKey}`)
 
-                if (this.configHelper.getConfig().delegatePublicKey === data.generatorPublicKey) {
+                if (this.configHelper.getConfig().bpWalletPublicKey === data.generatorPublicKey) {
                     const logline = "Received block revert event for a block previously forged by us > height:";
                     this.logger.debug(`(LL) ${logline} ${data.height}`);
                     this.sqlite.purgeFrom(data.height, data.timestamp);
@@ -242,7 +242,7 @@ export class Processor {
                         while (this.syncing) {
                             await setTimeout(100);
                         }
-                        const whitelist = [...config.whitelist, config.delegateAddress];
+                        const whitelist = [...config.whitelist, config.bpWalletAddress];
                         const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
                         const lastVoterAllocation: IAllocation[] = this.sqlite.getVoterAllocationAtHeight();
 
@@ -305,7 +305,7 @@ export class Processor {
                         const txRound = AppUtils.roundCalculator.calculateRound(data.transaction.blockHeight);
                         
                         if (txRound.round - lastForgedBlock.round <= 1) { // look ahead 1 round
-                            const whitelist = [...config.whitelist, config.delegateAddress];
+                            const whitelist = [...config.whitelist, config.bpWalletAddress];
                             const vrecord = lastVoterAllocation.filter( v => !whitelist.includes(v.address)) // exclude white-list
                                                                .find( v => v.address === data.transaction.senderId); 
 
@@ -583,7 +583,7 @@ export class Processor {
                     true);
 
                 if (blocks.length) { //actually redundant when lastProcessedBlockHeight < lastChainedBlockHeight
-                    const delegatesBlocks = blocks.filter((block) => block.generatorPublicKey === this.configHelper.getConfig().delegatePublicKey);
+                    const delegatesBlocks = blocks.filter((block) => block.generatorPublicKey === this.configHelper.getConfig().bpWalletPublicKey);
 
                     if (delegatesBlocks.length) {
                         await this.processBlocks(delegatesBlocks);

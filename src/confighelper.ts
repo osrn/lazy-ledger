@@ -1,9 +1,15 @@
-import { Constants, Utils } from "@solar-network/crypto";
+import { Constants, Identities, Networks, Utils } from "@solar-network/crypto";
 import { Container, Contracts, Providers, Utils as AppUtils } from "@solar-network/kernel";
+import { existsSync, lstatSync, readFileSync } from "fs";
+import { name } from "./package-details.json";
 import { IConfig, IPlan } from "./interfaces";
-import { baseplan } from "./defaults";
+import { baseplan, defaults } from "./defaults";
+import Joi from "joi";
+import os from "os";
+import { emoji } from "node-emoji";
 
 export const configHelperSymbol = Symbol.for("LazyLedger<ConfigHelper>");
+const appJson = "app.json";
 
 @Container.injectable()
 export class ConfigHelper {
@@ -22,21 +28,58 @@ export class ConfigHelper {
     private lastTimestamp: number = 0;
 
     public async boot(): Promise<boolean> {
-        this.config = this.configuration.all() as unknown as IConfig;
+        // ~/.config/solar-core/{mainnet|testnet}/app.json should include path-to-config-file
+        let configFile = this.configuration.get("configFile") as string;
+        if (!configFile) {
+            this.logger.emergency(`${name} plugin config error! Make sure ${this.app.configPath(appJson)} defines 'configFile' in plugin options`);
+            return false;
+        }
+        if (configFile.startsWith("~")) configFile = configFile.replace('~', os.homedir());
 
+        // configFile should exist
+        if (!existsSync(configFile) || !lstatSync(configFile).isFile()) {
+            this.logger.emergency(`${name} plugin config file ${configFile} not found or not a file!`);
+            return false;
+        }
+
+        // read configuration from file, merging with defaults as necessary
+        const configOptions = JSON.parse(readFileSync(configFile).toString()) as unknown as IConfig;
+        this.config = Object.assign({}, defaults, configOptions);
+
+        // validate config
+        const validation = validConfig.validate(this.config);
+        if (validation.error) {
+            this.logger.emergency(validation.error.toString());
+            this.logger.emergency(`${name} plugin config error! invalid settings in ${configFile}: ${validation.error.toString()}`);
+            return false;
+        }
+        
+        // validate bp
         const walletRepository = this.app.getTagged<Contracts.State.WalletRepository>(
             Container.Identifiers.WalletRepository,
             "state",
             "blockchain",
         );
-        if ( !(this.config.delegate && walletRepository.findByUsername(this.config.delegate)) ) {
-            this.logger.emergency("(LL) Config error! Missing or invalid bp username");
+        if (!walletRepository.hasByUsername(this.config.delegate!)) {
+            this.logger.emergency(`${name} plugin config error! BP username ${this.config.delegate} is not registered in blockchain`);
             return false;
         }
-        this.config.delegateWallet = walletRepository.findByUsername(this.config.delegate!);
-        this.config.delegateAddress = this.config.delegateWallet.getAddress();
-        this.config.delegatePublicKey = this.config.delegateWallet.getPublicKey();
+        this.config.bpWallet = walletRepository.findByUsername(this.config.delegate!);
+        if (!this.config.bpWallet.isDelegate()) {
+            this.logger.emergency(`${name} plugin config error! Username ${this.config.delegate} exists but is not a Block Producer`);
+            return false;
+        }
+        if (this.config.bpWallet.hasAttribute("delegate.resigned")) {
+            // wallet.getAttribute("delegate.resigned") === Enums.DelegateStatus.PermanentResign
+            // ? "permanent"
+            // : "temporary";
+            this.logger.emergency(`${name} plugin config error! BP ${this.config.delegate} is resigned`);
+            return false;
+        }
+        this.config.bpWalletAddress = this.config.bpWallet.getAddress();
+        this.config.bpWalletPublicKey = this.config.bpWallet.getPublicKey();
 
+        // validate plans
         if (!(this.config.plans && (this.config.plans.length > 0))) {
             this.logger.emergency("(LL) Config error. At least one reward sharing plan is required");
             return false;
@@ -114,17 +157,21 @@ export class ConfigHelper {
             plans.unshift(plan0);
         }
 
-        const configShallowClone = {...this.config};
-        // do not leak the passphrases to log
+        // log the effective configuration, but do not leak the passphrases
+        // const configShallowClone = {...this.config};
+        const configShallowClone = deepCopy(this.config);
         configShallowClone.passphrase &&= "****************";
         configShallowClone.secondpass &&= "****************";
+        if (typeof configShallowClone.discord?.webhookToken !== "undefined") {
+            configShallowClone.discord.webhookToken = "****************";
+        }
         this.logger.debug(`(LL) Effective configuration is:\n ${JSON.stringify(configShallowClone,null,4)}`);
 
         const present: IPlan = this.getPresentPlan();
         this.lastHeight = present.height!;
         this.lastTimestamp! = present.timestamp as number;
 
-        this.logger.info("(LL) Config Helper boot complete");
+        this.logger.info(`(LL) ConfigHelper: loaded configuration ${emoji.white_check_mark}`);
         return true;
     }
 
@@ -172,3 +219,51 @@ export class ConfigHelper {
         return false;
     }
 }
+
+const isWalletAddress = (address: string) => {
+    if (!Identities.Address.validate(address)) {
+        throw new Error(`${address} is not a valid wallet address`);
+    }
+    return address;
+};
+
+const joiRules = {
+    bpUsername: Joi.string().min(1).max(20).regex(/^(?!_)(?=.*[a-z!@$&_.])([a-z0-9!@$&_.]?)+$/),
+    walletAddress: Joi.string().length(34).custom(isWalletAddress),
+    walletAddressList: Joi.array().items(Joi.string().length(34).custom(isWalletAddress)).unique(),
+    mnemonic: Joi.string().min(1),
+    txMemo: Joi.string().max(255).allow('', null),
+    percentage: Joi.number().integer().min(0).max(100),
+    positiveInt: Joi.number().integer().min(0),
+    positiveIntOrNull: Joi.number().integer().min(0).allow(null),
+    yesOrNo: Joi.string().valid("y", "n", "Y", "N", "yes", "no"),
+    date: Joi.date().iso().required(),
+    network: Joi.string().valid(...Object.keys(Networks)),
+    slot: Joi.number().integer().min(1).max(53),
+    discord: Joi.object({
+        webhookId: Joi.string(), 
+        webhookToken: Joi.string(), 
+        mention: Joi.string().optional(), 
+        botname: Joi.string().min(3).max(12).optional(),
+    }),
+};
+
+const validConfig = Joi.object({
+    delegate: joiRules.bpUsername.required(),
+    passphrase: joiRules.mnemonic.required(),
+    secondpass: joiRules.mnemonic.allow(null, '').optional(),
+    excludeSelfFrTx: Joi.boolean().optional(),
+    mergeAddrsInTx: Joi.boolean().optional(),
+    reservePaysFees: Joi.boolean().optional(),
+    shareEarnedFees: Joi.boolean().optional(),
+    reserveGetsFees: Joi.boolean().optional(),
+    postInitInstantPay: Joi.boolean().optional(),
+    antibot: Joi.boolean().optional(),
+    whitelist: joiRules.walletAddressList.optional(),
+    discord: joiRules.discord.optional(),
+    plans: Joi.any().optional(),
+});
+
+function deepCopy(oldObj: any): any {
+    return JSON.parse(JSON.stringify(oldObj));
+};

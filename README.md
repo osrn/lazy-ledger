@@ -55,18 +55,20 @@ mkdir '@osrn' && cd '@osrn'
 ln -s ~/solar-core/plugins/lazy-ledger lazy-ledger
 ```
 
-## Upgrading to 0.1.0
-See [Release 0.1.0 notes](#release-010)
+## Upgrade
+## Upgrading to latest version 
+See [Release 0.2.0 notes](#release-020)
 
-## Upgrade procedure
-**Manual update:**
+**Standart update procedure unless otherwise instructed in release notes**
 ```bash
 . ~/.solar/.env
 cd ~/solar-core/plugins/lazy-ledger
 git pull
 pnpm build
-#pm2 restart solar-relay
+# if build successfull
+pm2 restart solar-relay
 ```
+
 
 ## Configuration
 The plugin must be configured by adding a section in `~/.config/solar-core/{mainnet|testnet}/app.json` at the end of the `plugins` within the `relay` block. A sample entry is provided [below](#sample-configuration). Configuration options explanied [here](#config-options).
@@ -81,7 +83,7 @@ Payment plans follows a milestone principle: higher index properties override th
 
 > You should always take your plans' payment schedule into consideration should you ever need to execute `solar snapshot:truncate|rollback` on your relay independent of the rest of the network; as this will revert the plugin database to rollback height after relay restarts, erasing any subsequent payment records. This may lead to duplicate payments for previously distributed rewards unless the whole network had rolled back. Making a database backup in advance and setting the base plan height to first unpaid allocation's forged block is a recommended practice before any such destructive operation.
 
-### Sample configuration
+### Sample configuration > app.json
 ```json
     "relay": {
         "plugins": [
@@ -90,65 +92,72 @@ Payment plans follows a milestone principle: higher index properties override th
                 "package": "@osrn/lazy-ledger",
                 "options": {
                     "enabled": true,
-                    "delegate": "block producer username",
-                    "passphrase": "block producer wallet mnemonic phrase",
-                    "excludeSelfFrTx": true,
-                    "mergeAddrsInTx": false,
-                    "reservePaysFees": true,
-                    "shareEarnedFees": false,
-                    "reserveGetsFees": false,
-                    "postInitInstantPay": false,
-                    "antibot": true,
-                    "whitelist": [],
-                    "discord": {
-                        "webhookId": "discord channel webhook id",
-                        "webhookToken": "discord channel webhook token",
-                        "mention": "discord userid to mention for alerts",
-                        "botname": "discord bot name to show in bot messages, 3-12 characters long. Default: Bot."
-                    },
-                    "plans": [
-                        {
-                            "height": 90000,
-                            "share": 0,
-                            "reserves": [
-                                {"address": "reserve_wallet_address", "share": 100}
-                            ],
-                            "donations": [],
-                            "blacklist": [],
-                            "mincap": 0,
-                            "maxcap": 0,
-                            "payperiod": 24,  
-                            "payoffset": 0, 
-                            "guardtime": 10 
-                        },
-                        {
-                            "height": 100000,
-                            "share": 50,
-                            "reserves": [
-                                {"address": "reserve_wallet_address", "share": 50}
-                            ]
-                        }
-                        {
-                            "timestamp": "2022-08-15T00:00:00.000Z",
-                            "share": 90,
-                            "reserves": [
-                                {"address": "reserve_wallet_address", "share": 10}
-                            ],
-                            "payperiod": 6
-                        },
-                        {
-                            "timestamp": "2022-08-22T00:00:00.000Z",
-                            "share": 50,
-                            "reserves": [
-                                {"address": "reserve_wallet_address", "share": 50}
-                            ],
-                            "payperiod": 24
-                        }
-                    ]
+                    "configFile": "~/solar-core/plugins/lazy-ledger/config.json"
                 }
             },
         ]
     },
+```
+
+### Sample configuration > app.json
+```json
+{
+    "delegate": "block producer username",
+    "passphrase": "block producer wallet mnemonic phrase",
+    "excludeSelfFrTx": true,
+    "mergeAddrsInTx": false,
+    "reservePaysFees": true,
+    "shareEarnedFees": false,
+    "reserveGetsFees": false,
+    "postInitInstantPay": false,
+    "antibot": true,
+    "whitelist": [],
+    "discord": {
+        "webhookId": "discord channel webhook id",
+        "webhookToken": "discord channel webhook token",
+        "mention": "discord userid to mention for alerts",
+        "botname": "discord bot name to show in bot messages, 3-12 characters long. Default: Bot."
+    },
+    "plans": [
+        {
+            "height": 90000,
+            "share": 0,
+            "reserves": [
+                {"address": "reserve_wallet_address", "share": 100}
+            ],
+            "donations": [],
+            "blacklist": [],
+            "mincap": 0,
+            "maxcap": 0,
+            "payperiod": 24,  
+            "payoffset": 0, 
+            "guardtime": 10 
+        },
+        {
+            "height": 100000,
+            "share": 50,
+            "reserves": [
+                {"address": "reserve_wallet_address", "share": 50}
+            ]
+        }
+        {
+            "timestamp": "2022-08-15T00:00:00.000Z",
+            "share": 90,
+            "reserves": [
+                {"address": "reserve_wallet_address", "share": 10}
+            ],
+            "payperiod": 6
+        },
+        {
+            "timestamp": "2022-08-22T00:00:00.000Z",
+            "share": 50,
+            "reserves": [
+                {"address": "reserve_wallet_address", "share": 50}
+            ],
+            "payperiod": 24
+        }
+    ]
+}
 ```
 
 ### Config Options
@@ -342,7 +351,7 @@ Voters and commitment details:
 **`solar ll:rollback <height>`**<br>
 deletes all records starting with (and including) the first block of the round for the given height.
 ```
-Arguments             
+Arguments
 height    Block height
 ```
 ```bash
@@ -404,9 +413,14 @@ then compare `balance|orgBalance`, `votePercent|orgVotePercent` and `vote|validV
 You are welcome to make any other accuracy checks by direct database query.
 
 ## Version Info
+
 ### Release 0.2.0
-#### -next.2 
+
+#### -next.2 config file
 **Changes**
+- **Breaking!** separated configuration from Solar app.json. Now app.json only defines whether the plugin is enabled and location of the configuration file.
+- config options remains the same.
+- config options are more strictly validated.
 
 #### -next.1 discord integration
 **Changes**
@@ -509,16 +523,15 @@ requires `@solar-network/: ^4.1.0 || ^4.1.0-next.5`
 
 ## Roadmap
 Not necessarily in this order;
-
-- [ ] Seperate configuration from app.json
+- [ ] Custom transaction memo
+- [ ] Command to list antibot detected vote hoppers
+- [ ] Database backup and periodic cleanup
 - [ ] Better logging
 - [ ] Reload config without relay restart
 - [ ] Web|console dashboard
-- [ ] Database backup and periodic cleanup
-- [ ] Custom transaction memo
 - [ ] Payment periods > 24h
-- [ ] Command to list antibot detected vote hoppers
-- [x] ~~Telegram~~|Discord integration
+- [X] Move configuration from app.json to own config.json
+- [X] ~~Telegram~~|Discord integration
 
 See [open issues](https://github.com/osrn/lazy-ledger/issues) for a full list of proposed features (and known issues).
 
