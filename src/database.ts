@@ -4,34 +4,37 @@ import SQLite3 from "better-sqlite3";
 import { ObjectId } from "bson";
 import { inlineCode } from "discord.js";
 import { emoji } from "node-emoji";
-import { Worker } from "worker_threads";
 import { DiscordHelper, discordHelperSymbol } from "./discordhelper";
-import { IAllocation, IBill, IForgedBlock, IForgingStats, PayeeTypes } from "./interfaces";
+import { IAllocation, IBill, IForgedBlock, IForgingStats, IWorkerJob, PayeeTypes } from "./interfaces";
+import { DbTaskQueue } from "./dbTaskQueue";
 
 export const databaseSymbol = Symbol.for("LazyLedger<Database>");
 const sqliteRunError: SQLite3.RunResult = { changes: -1, lastInsertRowid: 0 };
+const taskQueueSize = 2;
 
 @Container.injectable()
 export class Database {
-    @Container.inject(Container.Identifiers.Application)
-    private readonly app!: Contracts.Kernel.Application;
-
     @Container.inject(Container.Identifiers.LogService) 
     private readonly logger!: Contracts.Kernel.Logger;
 
     @Container.inject(discordHelperSymbol)
     private readonly dc!: DiscordHelper;
 
+    private dbpath!: string;
     private database!: SQLite3.Database;
+    private taskQueue!: DbTaskQueue;
 
     public init(dataPath?: string): SQLite3.Database {
         dataPath ||= process.env.CORE_PATH_DATA;
+        this.dbpath = dataPath!;
         const dbfile = "lltbw/lazy-ledger.sqlite";
-        if (this.logger) 
+        if (this.logger) {
             this.logger.debug(`(LL) Opening database connection @ ${dataPath}/${dbfile}`);
-        else
-            // no logger means called by a cli command
-            console.log(`(LL) Opening database connection @ ${dataPath}/${dbfile}`);
+        }
+        // else {
+        //     // no logger means called by a cli command
+        //     console.log(`(LL) Opening database connection @ ${dataPath}/${dbfile}`);
+        // }
         this.database = new SQLite3(`${dataPath}/${dbfile}`);
         return this.database;
     }
@@ -81,6 +84,7 @@ export class Database {
         `);
         this.database.pragma("journal_mode = WAL");
         this.triggers(true);
+        this.taskQueue = new DbTaskQueue(this.dbpath, taskQueueSize, this.logger);
         this.logger.info("(LL) Database boot complete");
     }
 
@@ -131,58 +135,38 @@ export class Database {
     }
     
     public async getAllVotersLastAllocation(): Promise<IAllocation[]> {
-        return new Promise((resolve, reject) => {
-            const sqlstr = 
-               `SELECT m.* FROM allocations m INNER JOIN (
-                    SELECT address, MAX(height) as height from allocations
-                    WHERE payeeType = 1
-                    GROUP BY address
-                ) AS g
-                ON m.address = g.address
-                AND m.height = g.height
+        const sqlstr = 
+            `SELECT m.* FROM allocations m INNER JOIN (
+                SELECT address, MAX(height) as height from allocations
                 WHERE payeeType = 1
-                ORDER by m.height ASC`;
- 
-            const worker = new Worker(`${__dirname}/sqlworker.js`, {
-                workerData: {
-                    id: new ObjectId().toHexString(),
-                    name: "getAllVotersLastAllocation",
-                    dbpath: this.app.dataPath(),
-                    query: sqlstr,
-                },
-            });
+                GROUP BY address
+            ) AS g
+            ON m.address = g.address
+            AND m.height = g.height
+            WHERE payeeType = 1
+            ORDER by m.height ASC`;
 
-            worker.on("message", (message) => {
-                if (message.type === "log") {
-                    if (!message.level) message.level = "debug";
-                    this.logger[message.level](message.data);
-                }
-                else if (message.type === "result") {
-                    // this.logger.debug(`(LL) Retrieved result from the worker task: ${JSON.stringify(message.data)}`);
-                    const result = message.data;
-                    (result as unknown as IAllocation[]).forEach(r => { 
-                        r.balance = Utils.BigNumber.make(r.balance);
-                        r.orgBalance = Utils.BigNumber.make(r.orgBalance);
-                        r.allotment = Utils.BigNumber.make(r.allotment);
-                        r.validVote = Utils.BigNumber.make(r.validVote);
-                    });
-                    resolve(result);
-                }
+        const job: IWorkerJob = {
+            id: new ObjectId().toHexString(),
+            customer: "getAllVotersLastAllocation",
+            data: sqlstr,
+        }
+        try {
+            const result: IAllocation[] = (await this.taskQueue.addTask(job)) as unknown as IAllocation[];
+            result.forEach(r => { 
+                r.balance = Utils.BigNumber.make(r.balance);
+                r.orgBalance = Utils.BigNumber.make(r.orgBalance);
+                r.allotment = Utils.BigNumber.make(r.allotment);
+                r.validVote = Utils.BigNumber.make(r.validVote);
             });
-    
-            worker.on("error", (error) => {
-                reject(error);
-            });
-    
-            worker.on("exit", (code) => {
-                if (code !== 0) {
-                    reject(new Error(`Worker thread exited with code ${code}`));
-                }
-                // else {
-                //     resolve([]);
-                // }
-            });
-        });
+            return result;
+        } 
+        catch (error) {
+            this.logger.critical("(LL) Error retrieving voters' last allocation from the database");
+            this.logger.critical(error.message);
+            this.dc.sendmsg(`${emoji.biohazard_sign} Error retrieving voters' last allocation from the database`);
+            return [];
+        }
     }
 
     public getLedgerAtHeight(height: number = 0): Object[] {

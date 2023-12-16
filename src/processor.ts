@@ -401,15 +401,16 @@ export class Processor {
                             validVote: validVote
                         }
                     });
-                this.logger.debug(`(LL) voter roll and voter balances retrieved from blockRepository in ${msToHuman(Date.now() - tick)}`);
+                this.logger.debug(`(LL) voter roll and voter balances retrieved from blockrepository (live) in ${msToHuman(Date.now() - tick)}`);
                 voters.push(...myVoters);
             }
             else {
                 const voter_roll = await this.transactionRepository.getDelegateVotesByHeight(block.height, generator, block.generatorPublicKey);
-                this.logger.debug(`(LL) voter roll retrieved from blockchain in ${msToHuman(Date.now() - tick)}`);
+                this.logger.debug(`(LL) voter roll retrieved from blockchain (Solar db) in ${msToHuman(Date.now() - tick)}`);
                 tick = Date.now();
                 const lastVoterAllocation: IAllocation[] = await this.sqlite.getAllVotersLastAllocation();
-                this.logger.debug(`(LL) voters last allocation retrieved from LL db in ${msToHuman(Date.now() - tick)}`);
+                this.logger.debug(`(LL) voters last known balances retrieved from LazyLedger db in ${msToHuman(Date.now() - tick)}`);
+                tick = Date.now();
                 let voterIndex=1;
                 for (const v of voter_roll) {
                     const tick2 = Date.now();
@@ -444,6 +445,7 @@ export class Processor {
                     voterIndex++;
                     // await setTimeout(100); // getNetBalanceByHeightRange may take a long time blocking the other relay processes
                 }
+                this.logger.debug(`(LL) voters balances at height ${block.height} reconstructed from blockchain (Solar db) records in ${msToHuman(Date.now() - tick)}`);
             }
 
             const votes: Utils.BigNumber = voters.map( o => o.vote).reduce((a, b) => a.plus(b), Utils.BigNumber.ZERO);

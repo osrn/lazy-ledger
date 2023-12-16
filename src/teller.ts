@@ -9,6 +9,7 @@ import { DiscordHelper, discordHelperSymbol } from "./discordhelper";
 import { Processor } from "./processor";
 import { CronJob } from "cron";
 import {setTimeout} from "node:timers/promises";
+import { msToHuman } from "./utils";
 
 export const tellerSymbol = Symbol.for("LazyLedger<Teller>");
 
@@ -126,8 +127,9 @@ export class Teller{
         // Filter out bp address in allocations query?
         const exclude: string | undefined = this.configHelper.getConfig().excludeSelfFrTx ? this.configHelper.getConfig().bpWalletAddress : undefined;
         // Fetch the allocations from local db
+        const tick0 = Date.now();
         const bill: IBill[] = this.sqlite.getBill(plan.payperiod, plan.payoffset, now, exclude);
-        this.logger.debug(`(LL) Fetched ${bill.length} allocations from the database`);
+        this.logger.debug(`(LL) Fetched ${bill.length} allocations from the database in ${msToHuman(Date.now() - tick0)}`);
         // this.logger.debug(`(LL) trace: bill:IBill[]=\n${JSON.stringify(bill, null, 4)}`);
 
         if (bill.length == 0) {
@@ -283,7 +285,7 @@ export class Teller{
             this.dc.sendmsg(`${emoji.scream} Insufficient wallet balance to execute this pay order. Available:${inlineCode(Utils.formatSatoshi(walletBalance))} Required:${inlineCode(Utils.formatSatoshi(txTotal.plus(dynfee)))}`);
             return;
         }
-        this.logger.debug(`(LL) Sufficient wallet balance to execute this pay order. Available:${Utils.formatSatoshi(walletBalance)} Required:${Utils.formatSatoshi(txTotal.plus(dynfee))}`);
+        this.logger.debug(`(LL) Sufficient wallet balance to execute this pay order. Available:${Utils.formatSatoshi(walletBalance)} Required:${Utils.formatSatoshi(txTotal.plus(dynfee))} Will remain: ${Utils.formatSatoshi(walletBalance.minus(txTotal.plus(dynfee)))}`);
         transaction.sign(config.passphrase);
         if (config.secondpass) {
             transaction.secondSign(config.secondpass);
@@ -297,7 +299,7 @@ export class Teller{
 
         if (result.accept.length > 0) {
             this.logger.debug(`(LL) Transaction txid ${result.accept[0]} successfully sent!`);
-            this.dc.sendmsg(`${emoji.atm} Sent transaction for reward payment tagged ${inlineCode(msg)} with amount ${inlineCode(Utils.formatSatoshi(txTotal))} and fee ${inlineCode(Utils.formatSatoshi(dynfee))} | Txid: ${result.accept[0]}`);
+            this.dc.sendmsg(`${emoji.atm} Sent transaction for reward payment tagged ${inlineCode(msg)} with **amount:** ${inlineCode(Utils.formatSatoshi(txTotal))}, **fee:** ${inlineCode(Utils.formatSatoshi(dynfee))} | **New wallet balance:** ${inlineCode(Utils.formatSatoshi(walletBalance.minus(txTotal.plus(dynfee))))} | **Txid:** ${inlineCode(result.accept[0])}`);
         } 
         else {
             this.logger.critical("(LL) An error occurred sending transaction:");

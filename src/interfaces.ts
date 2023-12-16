@@ -119,3 +119,16 @@ export enum PendingTypes {
     current,
     all
 }
+
+export interface IQueueItem {
+    resolve: (v?: {} | PromiseLike<{}>) => void;
+    reject: (reason?: any) => void;
+    job: IWorkerJob;
+    // lazyTask: () => Promise<{}>;
+};
+  
+export interface IWorkerJob {
+    id: string;
+    customer: string;
+    data: string;
+}
