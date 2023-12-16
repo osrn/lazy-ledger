@@ -1,7 +1,7 @@
 {
     "name": "@osrn/lazy-ledger",
     "description": "True Block Weight Reward Sharing Plugin for Solar Network",
-    "version": "0.2.0-next.4",
+    "version": "0.2.0-next.5",
     "homepage": "https://github.com/osrn/lazy-ledger",
     "contributors": [
         "osrn <osrnnetwork@gmail.com>"
@@ -21,6 +21,7 @@
     },
     "dependencies": {
         "better-sqlite3": "7.6.2",
+        "bson": "^6.2.0",
         "cron": "1.8.2",
         "dayjs": "1.10.7",
         "discord.js": "^14.11.0",

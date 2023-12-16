@@ -1,8 +1,10 @@
 import { Constants, Managers, Networks, Types, Utils } from "@solar-network/crypto";
 import { Container, Contracts } from "@solar-network/kernel";
 import SQLite3 from "better-sqlite3";
+import { ObjectId } from "bson";
 import { inlineCode } from "discord.js";
 import { emoji } from "node-emoji";
+import { Worker } from "worker_threads";
 import { DiscordHelper, discordHelperSymbol } from "./discordhelper";
 import { IAllocation, IBill, IForgedBlock, IForgingStats, PayeeTypes } from "./interfaces";
 
@@ -11,6 +13,9 @@ const sqliteRunError: SQLite3.RunResult = { changes: -1, lastInsertRowid: 0 };
 
 @Container.injectable()
 export class Database {
+    @Container.inject(Container.Identifiers.Application)
+    private readonly app!: Contracts.Kernel.Application;
+
     @Container.inject(Container.Identifiers.LogService) 
     private readonly logger!: Contracts.Kernel.Logger;
 
@@ -19,7 +24,7 @@ export class Database {
 
     private database!: SQLite3.Database;
 
-    public init(dataPath?: string) {
+    public init(dataPath?: string): SQLite3.Database {
         dataPath ||= process.env.CORE_PATH_DATA;
         const dbfile = "lltbw/lazy-ledger.sqlite";
         if (this.logger) 
@@ -28,6 +33,7 @@ export class Database {
             // no logger means called by a cli command
             console.log(`(LL) Opening database connection @ ${dataPath}/${dbfile}`);
         this.database = new SQLite3(`${dataPath}/${dbfile}`);
+        return this.database;
     }
     
     public async boot(): Promise<void> {
@@ -73,6 +79,7 @@ export class Database {
                     a.shareRatio, a.allotment, a.bookedTime, a.transactionId, a.settledTime, a.orgBalance, a.orgVotePercent 
                 FROM allocated_human a LEFT JOIN forged_blocks_human b ON a.height = b.height;
         `);
+        this.database.pragma("journal_mode = WAL");
         this.triggers(true);
         this.logger.info("(LL) Database boot complete");
     }
@@ -122,27 +129,60 @@ export class Database {
         });
         return result;
     }
-
-    public getAllVotersLastAllocation(height: number = 0): IAllocation[] {
-        const result = this.database.prepare(
-           `SELECT m.* FROM allocations m INNER JOIN (
-                SELECT address, MAX(height) as height from allocations
+    
+    public async getAllVotersLastAllocation(): Promise<IAllocation[]> {
+        return new Promise((resolve, reject) => {
+            const sqlstr = 
+               `SELECT m.* FROM allocations m INNER JOIN (
+                    SELECT address, MAX(height) as height from allocations
+                    WHERE payeeType = 1
+                    GROUP BY address
+                ) AS g
+                ON m.address = g.address
+                AND m.height = g.height
                 WHERE payeeType = 1
-                GROUP BY address
-            ) AS g
-            ON m.address = g.address
-            AND m.height = g.height
-            WHERE payeeType = 1
-            ORDER by m.height ASC`)
-        .all();
-        
-        (result as unknown as IAllocation[]).forEach(r => { 
-            r.balance = Utils.BigNumber.make(r.balance);
-            r.orgBalance = Utils.BigNumber.make(r.orgBalance);
-            r.allotment = Utils.BigNumber.make(r.allotment);
-            r.validVote = Utils.BigNumber.make(r.validVote);
+                ORDER by m.height ASC`;
+ 
+            const worker = new Worker(`${__dirname}/sqlworker.js`, {
+                workerData: {
+                    id: new ObjectId().toHexString(),
+                    name: "getAllVotersLastAllocation",
+                    dbpath: this.app.dataPath(),
+                    query: sqlstr,
+                },
+            });
+
+            worker.on("message", (message) => {
+                if (message.type === "log") {
+                    if (!message.level) message.level = "debug";
+                    this.logger[message.level](message.data);
+                }
+                else if (message.type === "result") {
+                    // this.logger.debug(`(LL) Retrieved result from the worker task: ${JSON.stringify(message.data)}`);
+                    const result = message.data;
+                    (result as unknown as IAllocation[]).forEach(r => { 
+                        r.balance = Utils.BigNumber.make(r.balance);
+                        r.orgBalance = Utils.BigNumber.make(r.orgBalance);
+                        r.allotment = Utils.BigNumber.make(r.allotment);
+                        r.validVote = Utils.BigNumber.make(r.validVote);
+                    });
+                    resolve(result);
+                }
+            });
+    
+            worker.on("error", (error) => {
+                reject(error);
+            });
+    
+            worker.on("exit", (code) => {
+                if (code !== 0) {
+                    reject(new Error(`Worker thread exited with code ${code}`));
+                }
+                // else {
+                //     resolve([]);
+                // }
+            });
         });
-        return result;
     }
 
     public getLedgerAtHeight(height: number = 0): Object[] {
@@ -591,7 +631,8 @@ export class Database {
     }
 
     public rollback(height: number): void {
-        this.logger.debug(`(LL) Rolling back the database to height < ${height}`);
+        // called from cli when relay is NOT runningi hence cannot use this.logger
+        console.log(`(LL) Rolling back the database to height < ${height}`);
         const truncateForged: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM forged_blocks WHERE height >= :height");
         const truncateMissed: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM missed_blocks WHERE height >= :height");
         const truncateAllocated: SQLite3.Statement<any[]> = this.database.prepare("DELETE FROM allocations WHERE height >= :height");
@@ -605,9 +646,8 @@ export class Database {
             })();
             this.triggers(true);
         } catch (error) {
-            this.logger.critical("(LL) Error rolling back the database");
-            this.logger.critical(error.message);
-            this.dc.sendmsg(`${emoji.biohazard_sign} Error rolling back the database`);
+            console.log("(LL) Error rolling back the database!");
+            console.log(error.message);
         }
     }
 

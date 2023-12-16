@@ -408,7 +408,7 @@ export class Processor {
                 const voter_roll = await this.transactionRepository.getDelegateVotesByHeight(block.height, generator, block.generatorPublicKey);
                 this.logger.debug(`(LL) voter roll retrieved from blockchain in ${msToHuman(Date.now() - tick)}`);
                 tick = Date.now();
-                const lastVoterAllocation: IAllocation[] = this.sqlite.getAllVotersLastAllocation();
+                const lastVoterAllocation: IAllocation[] = await this.sqlite.getAllVotersLastAllocation();
                 this.logger.debug(`(LL) voters last allocation retrieved from LL db in ${msToHuman(Date.now() - tick)}`);
                 let voterIndex=1;
                 for (const v of voter_roll) {
@@ -442,6 +442,7 @@ export class Processor {
                         this.logger.debug(`(LL) Voter ${voterIndex} / ${voter_roll.length} processed in ${msToHuman(Date.now() - tick2)}`);
                     }
                     voterIndex++;
+                    // await setTimeout(100); // getNetBalanceByHeightRange may take a long time blocking the other relay processes
                 }
             }
 

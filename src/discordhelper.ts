@@ -29,7 +29,7 @@ export class DiscordHelper {
                 await DiscordHelper.Discord.send({ content: message, username: this.botname})
         }
         catch (e) {
-            this.logger.error(`Exception at discord send()\n${pretty(e)}\n${pretty(e.stack)}`);
+            this.logger.error(`(LL) Exception at discord send()\n${pretty(e)}\n${pretty(e.stack)}`);
         }
     }
 
@@ -46,7 +46,7 @@ export class DiscordHelper {
             this.botname = this.config.discord?.botname;
             try {
                 DiscordHelper.Discord = new WebhookClient({ id: this.config.discord.webhookId, token: this.config.discord.webhookToken });
-                this.logger.info(`DiscordHelper: boot complete ${emoji.white_check_mark}`);
+                this.logger.info(`(LL) DiscordHelper: boot complete ${emoji.white_check_mark}`);
             }
             catch (e) {
             }

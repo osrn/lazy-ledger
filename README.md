@@ -3,9 +3,9 @@
 Solar Network Core Plugin for Rewards Bookkeeping and Payments Distribution. 
 
 ## Introduction
-Lazy-Ledger is a core plugin utilizing core functions and events to share forging rewards with voters and other stakeholders. Rewards are calculated at each forged block then allocated amongst the stakeholders in compliance with the reward sharing plan(s) configured. Mutltiple plans can be scheduled only one being active at a given block height & timestamp.
+Lazy-Ledger is a core plugin utilizing core functions and events to share forging rewards with voters and other stakeholders. Rewards are calculated at each forged block then allocated amongst the stakeholders in compliance with the reward sharing plan(s) configured. Multiple plans can be scheduled with only one being active at a given block height & timestamp.
 
-The ledger is stored as a local database where an entry is recorded for each stakeholder for each block forged. An auto-recovery mechanism continuously checks for block reverts, aligning ledger database with the network.
+The ledger is stored in a local sqlite database where an entry is recorded for each voter for each block forged. An auto-recovery mechanism continuously checks for forks and aligns ledger database with the network in the case of block and transaction revert events.
 
 A ledger record is composed of following metadata:
 `block height`, `round`, `forged time`, `block reward`, `earned reward`[^1], `earned fees`[^2], `total valid votes`[^3], `recipient address`, `recipient type`, `valid voting balance`[^3], `share ratio`, `allotment`, `entry timestamp`, `payment transaction id`, `timestamp transaction forged`
@@ -18,28 +18,29 @@ All timestamps are unix except forged time, which is Solar epochstamp.
 
 [^3]: valid amount after mincap, maxcap, blacklist and anti-bot processing
 
-Following the boot sequence plugin retrieves all past forged blocks from the core database, calculating stakeholders and allocations valid for the block's height & timestamp using the corresponding plan. Only blocks after first plan with non-zero allocation are retrieved for the sake of first-time synchronisation duration. Following initial sync, Ledger is updated in real time triggered by the core events.
+Following the boot sequence plugin retrieves all past forged blocks from the core database, calculating stakeholders and allocations valid for the block's height & timestamp using the corresponding plan. Only blocks forged after first plan with non-zero allocation are retrieved for the sake of first-time synchronisation duration. Following initial sync, Ledger is updated in real time triggered by the core events.
 
-Governed by the plan parameters, a periodic payment job distributes rewards to the stakeholders. Transaction fee is calculated dynamically. Transfer recipients and pool sender limits are respected. A debt is only settled when the corresponding transaction is forged, but unsettled back should the transaction is reverted afterwards.
+Governed by the plan parameters, a periodic payment job distributes rewards to the stakeholders. Transaction fees are calculated dynamically. Transfer recipients and pool sender limits are respected. A debt is only settled when the corresponding reward payment transaction is forged, but unsettled back should the transaction is reverted afterwards.
 
 The plugin can optionally be used for bookkeeping only; handling payments externally by directly accessing the database[^4].
 
-[^4]: `~/.local/share/solar-core/{mainnet|testnet}/lazy-ledger.sqlite`
+[^4]: `~/.local/share/solar-core/{mainnet|testnet}/lltbw/lazy-ledger.sqlite`
 
 ### Voter protection
-Plugin employs a protection mechanism against malicious bots (those making a roundtrip of votes &| funds among several addresses within the round) by looking ahead one forging cycle and reducing the valid votes of the offending addresses for the last block as per their actions. Consequently last block allocation distribution recalculated to the benefit of all stakeholders.
+Plugin employs a protection mechanism against malicious bots (those making a roundtrip of votes &| funds among several addresses within the round) by looking ahead one forging cycle and reducing the valid votes of the offending addresses for the last block as per their actions. Consequently last block reward distribution recalculated to the benefit of other voters.
 
-Offending address votes are recalculated only when:
+Offending address votes are recalculated when:
 1. voting percentage is reduced
 2. an outbound transfer is made
 
-No action taken if **vote percent increases** or **funds received** or the **allocation for that block is already in transaction pool**.
+No action taken if **vote percent increases** or **funds received** or the **reward payment for that block is already in the transaction pool**.
 
 ## Installation
 **Preferred method:**
 ```bash
 solar plugin:install https://github.com/osrn/lazy-ledger.git
 ```
+Then, proceed to [configuration section](#configuration).
 
 **Manual install:**
 ```bash
@@ -49,31 +50,31 @@ git clone https://github.com/osrn/lazy-ledger
 cd lazy-ledger
 CFLAGS="$CFLAGS" CPATH="$CPATH" LDFLAGS="$LDFLAGS" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" pnpm install
 pnpm build
-# Following is necessary for solar ll: commands to be registered
+# Following is necessary for solar registration of cli commands
 cd ~/.local/share/solar-core/{mainnet|testnet}/plugins/
 mkdir '@osrn' && cd '@osrn'
 ln -s ~/solar-core/plugins/lazy-ledger lazy-ledger
 ```
+Then, proceed to [configuration section](#configuration).
 
 ## Upgrade
 ## Upgrading to latest version 
 See [Release 0.2.0 notes](#release-020)
 
-**Standart update procedure unless otherwise instructed in release notes**
+**Standart update procedure (unless otherwise instructed in release notes)**
 ```bash
 . ~/.solar/.env
 cd ~/solar-core/plugins/lazy-ledger
 git pull
 pnpm build
-# if build successfull
 pm2 restart solar-relay
 ```
 
 
 ## Configuration
-The plugin must be configured by adding a section in `~/.config/solar-core/{mainnet|testnet}/app.json` at the end of the `plugins` within the `relay` block. A sample entry is provided [below](#sample-configuration). Configuration options explanied [here](#config-options).
+The plugin must be configured by adding a section in `~/.config/solar-core/{mainnet|testnet}/app.json` at the end of the `plugins` within the `relay` block. A sample entry is provided [below](#sample-configuration). Configuration options are explanied [here](#config-options).
 
-This sample config will;
+The sample config will;
 - allocate 100% to reserve address starting with 90000 until block height 100000, paying every 24 hours at 00:10 UTC
 - allocate 50% to voters, 50% to reserve address starting with block 100000 until 2022-08-14T23:59:59.999 UTC, paying every 24 hours at 00:10 UTC
 - allocate 90% to voters, 10% to reserve address between 2022-08-15T00:00:00.000Z and 2022-08-22T00:00:00.000Z, paying every 6 hours at 10 minutes past UTC.
@@ -81,7 +82,7 @@ This sample config will;
 
 Payment plans follows a milestone principle: higher index properties override the lower ones, where an effective plan is produced against the height and timestamp for a given forged block. There is no in built plan sorting, thus **_linear scheduling is your responsibility_**.
 
-> You should always take your plans' payment schedule into consideration should you ever need to execute `solar snapshot:truncate|rollback` on your relay independent of the rest of the network; as this will revert the plugin database to rollback height after relay restarts, erasing any subsequent payment records. This may lead to duplicate payments for previously distributed rewards unless the whole network had rolled back. Making a database backup in advance and setting the base plan height to first unpaid allocation's forged block is a recommended practice before any such destructive operation.
+> :warning: You should always take your plans' payment schedule into consideration should you ever need to execute `solar snapshot:truncate|rollback` on your relay independent of the rest of the network; as this will revert the plugin database to rollback height after relay restarts, erasing any subsequent payment records. This may lead to duplicate payments for previously distributed rewards unless the whole network had rolled back. Making a database backup in advance and setting the base plan height to first unpaid allocation's forged block is a recommended practice before any such destructive operation.
 
 ### Sample configuration > app.json
 ```json
@@ -166,7 +167,6 @@ Payment plans follows a milestone principle: higher index properties override th
 
 | Name | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| enabled | boolean | false | plugin enabled |
 | delegate | string | | bp username |
 | plans | Array\<Plan\> | |reward sharing plans |
 | passphrase | string | | bp wallet passphrase |
@@ -194,7 +194,7 @@ Payment plans follows a milestone principle: higher index properties override th
 | mincap | number | 0 | minimum voter wallet balance eligible for rewards allocation (SXP)|
 | maxcap | number | 0 | maximum vote weight from an address (SXP)|
 | blacklist | string[] | [] | addresses blacklisted from rewards allocation |
-| payperiod | number | 24 | Payment cycle - every [0,1,2,3,4,6,8,12,24] hours. Zero will not handle payment - except the case when `postInitInstantPay` is true|
+| payperiod | number | 24 | payment cycle - every [0,1,2,3,4,6,8,12,24] hours. Zero will not handle payment - except the case when `postInitInstantPay` is true|
 | payoffset | number | 0 | new cycle begins at UTC 00:00 + offset hrs. 0-23. |
 | guardtime | number | 10 | delay in minutes before preparing the payment order at the end of a payment cycle - precaution against block reverts. 0-59. |
 
@@ -216,6 +216,7 @@ List of Lazy-Ledger commands can be viewed with `solar help`.<br>
 Command specific help can be displayed with `solar ll:<command> --help`.
 <br><br>
 
+### :alloc
 **`solar ll:alloc [--round m | --height n] [--raw | --json | --format="std | json | raw"]`**<br>
 shows the block allocation at given round or height; former having priority over the latter if both provided. Last round if arguments skipped.
 ```
@@ -225,6 +226,9 @@ Flags
 --format     Display output as standard, formatted JSON or raw
 --json       Short for format="json". Overrides --format
 --raw        Short for format="raw". Overrides --format and --json
+```
+```bash
+solar ll:alloc
 ```
 ```
 Retrieving data from last block ...
@@ -256,6 +260,7 @@ Retrieving data from last block ...
 ]
 ```
 ---
+### :lastpaid
 **`solar ll:lastpaid [--all] [--raw | --json | --format="std | json | raw"]`**<br>
 shows summary|detail info about the last paid forged-block allocation - summary if flag skipped.
 ```
@@ -278,6 +283,7 @@ Retrieving info about the last paid forged-block allocation ...
 }
 ```
 ---
+### :pending
 **`solar ll:pending [--raw | --json | --format="std | json | raw"]`**<br>
 shows pending (=unpaid) allocations since last payment.
 ```
@@ -309,6 +315,7 @@ Retrieving pending allocations since last payment ...
 └───────────────┴─────────────┘
 ```
 ---
+### :commitment
 **`solar ll:commitment --start <datetime> --end <datetime> [-v]`**<br>
 shows voter commitment (voting balance not reduced) during a time frame
 ```
@@ -358,6 +365,7 @@ Voters and commitment details:
 }
 ```
 ---
+### :antibot
 **`solar ll:antibot --start <datetime> [--end <datetime>] [--raw | --json | --format="std | json | raw"]`**<br>
 lists antibot detected voters, hit frequency and antibot adjusted allotments total during a time frame
 ```
@@ -382,9 +390,8 @@ Antibot has detected 1 addresses during the given timeframe:
 │ D5amxBtrXduR8M97xA2KvU1zp5UnJC2oZR │  1   │ '0 tSXP' │
 └────────────────────────────────────┴──────┴──────────┘
 ```
-
-
 ---
+### :rollback
 **`solar ll:rollback <height>`**<br>
 deletes all records starting with (and including) the first block of the round for the given height.
 ```
@@ -452,7 +459,7 @@ You are welcome to make any other accuracy checks by direct database query.
 ## Version Info
 
 ### Release 0.2.0
-**Before upgrading to this release**
+#### Before upgrading
 1. stop relay `pm2 stop solar-relay`
 1. backup your database `tar -cPzf ~/lazy-ledger.backup-$(date +%Y%m%d-%H%M%S).tar.gz ~/.local/share/solar-core/{mainnet|testnet}/lazy-ledger*`
 1. create a subfolder and move your database:
@@ -463,8 +470,8 @@ mv lazy-ledger.sqlite* lltbw
 cd ~
 ```
 
-**To upgrade to this release** 
-1. Pull from upstream, update dependencies and build.
+##### To upgrade
+1. Pull, update dependencies and rebuild.
 ```bash
 cd  ~/solar-core/plugins/lazy-ledger
 . ~/.solar/.env
@@ -474,41 +481,31 @@ pnpm build
 cd ~
 ```
 2. create a config file and move your config options from `app.json` to `your-config.json` as described above in [sample configuration section](#configuration)
+3. add the config file path to app.json as described above in [sample configuration section](#configuration)
+4. restart relay `pm2 restart solar-relay`
 
-#### -next.4 new cli command `antibot`
-**Changes**
-- added option to list antibot detected voters, hit frequency and antibot adjusted allotments total during a time frame.
-
-#### -next.3 custom reward transaction memo
-**Changes**
-- New configuration options rewardMemo, rewardStamp.
-
-#### -next.2 config file
-**Changes**
+#### Changes
+- **Breaking!** moved sqlite database file location. See upgrade instructions below.
 - **Breaking!** separated configuration from Solar app.json. Now app.json only defines whether the plugin is enabled and location of the configuration file.
-- config options remains the same.
+- new cli command `antibot`. added option to list antibot detected voters, hit frequency and antibot adjusted allotments total during a time frame.
+- new configuration options rewardMemo and rewardStamp. allows for customized reward transaction memo
 - stricter config options validation.
-
-#### -next.1 discord integration
-**Changes**
 - discord notifications 
     - when plugin boots
     - when reward payments done
     - for critical errors or warnings
-- replaced term `delegate` with `bp` whereever applicable
+- replaced term `delegate` with `bp` in messages and notifications as applicable
+- performance improvements and bug squash
+    - added new indexes to the sqlite database<sup>(*)</sup>
+    - increased block processing speed when blocks are being retrieved in real time (not catching a backlog) by utilizing the current information available from the blockRepository rather than replaying the transactions happened since last block forged on top of the state last saved in the local sqlite database
+    - fixed blocking operation when retrieving voter last balances from local db when processing blocks from backlog with large number of voters
+    - fixed plan payperiod out of bounds auto correction condition
+    - fixed issue plan mincap creation when plan does not specify one
+    - added version information to boot time log messages
+    - package `delay-5.0.0` replaced with `node:timers/promises`
+    - cleanup obselete comments and dead code
 
-#### -next.0 performance improvements and bug squash
-**Changes**
-- **Breaking!** moved sqlite database file location. See upgrade instructions below.
-- fixed plan payperiod out of bounds auto correction condition
-- fixed issue plan mincap creation when plan does not specify one
-- added new indexes to the sqlite database<sup>(*)</sup>
-- added version information to boot time log messages
-- increased block processing speed when blocks are being retrieved in real time (not catching a backlog) by utilizing the current information available from the blockRepository rather than replaying the transactions happened since last block forged on top of the state last saved in the local sqlite database
-- package `delay-5.0.0` replaced with `node:timers/promises`
-- cleanup obselete comments and dead code
-
-> <sup>(*)</sup> First time boot duration may be prolonged due to creation of new indexes after the upgrade
+> <sup>(*)</sup> You may observe a prolonged plugin database boot duration during the first restart after the upgrade, due to creation of new indexes.
 
 
 ### Release 0.1.2
@@ -529,7 +526,7 @@ The algorithm is also improved in order to:
 - Try subsequent reserve wallets if first one cannot cover the costs
 - Log a warning if none of the reserve wallet allocations meet the criteria (in which case tx fee will be paid from the bp wallet as if  `reservePaysFees=false`).
 
-:warning: Important : Moving forward, tx fee will not be deducted from any reserve allocations when `mergeAddrsInTx=true`, consequently requiring bp wallet to have enough funds to pay full rewards+txfee.
+> :warning: Important : Moving forward, tx fee will not be deducted from any reserve allocations when `mergeAddrsInTx=true`, consequently requiring bp wallet to have enough funds to pay full rewards+txfee.
 
 ### Release 0.1.1
 **Changes**
@@ -576,7 +573,7 @@ Not necessarily in this order;
 - [X] Command to list antibot detected vote hoppers
 - [X] Custom transaction memo
 - [X] Move configuration from app.json to own config.json
-- [X] ~~Telegram~~|Discord integration
+- [X] ~~Telegram~~|Discord notifications
 
 See [open issues](https://github.com/osrn/lazy-ledger/issues) for a full list of proposed features (and known issues).
 
