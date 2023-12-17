@@ -244,7 +244,7 @@ export class Processor {
                         }
                         const whitelist = [...config.whitelist, config.bpWalletAddress];
                         const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
-                        const lastVoterAllocation: IAllocation[] = this.sqlite.getVoterAllocationAtHeight();
+                        const lastVoterAllocation: IAllocation[] = this.sqlite.getAllVotersRecordAtHeight();
 
                         if (lastForgedBlock && lastVoterAllocation.length > 0) { // always true unless brand new bp
                             const txRound = AppUtils.roundCalculator.calculateRound(txData.blockHeight!);
@@ -299,7 +299,7 @@ export class Processor {
                         await setTimeout(100);
                     }
                     const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
-                    const lastVoterAllocation: IAllocation[] = this.sqlite.getVoterAllocationAtHeight();
+                    const lastVoterAllocation: IAllocation[] = this.sqlite.getAllVotersRecordAtHeight();
                     
                     if (lastForgedBlock && lastVoterAllocation.length > 0) { // always true unless brand new bp
                         const txRound = AppUtils.roundCalculator.calculateRound(data.transaction.blockHeight);
@@ -405,10 +405,10 @@ export class Processor {
                 voters.push(...myVoters);
             }
             else {
-                const voter_roll = await this.transactionRepository.getDelegateVotesByHeight(block.height, generator, block.generatorPublicKey);
+                const voter_roll = await this.transactionRepository.getDelegateVotesByHeight(block.height, generator, block.generatorPublicKey); // TODO: needs optimization.
                 this.logger.debug(`(LL) voter roll retrieved from blockchain (Solar db) in ${msToHuman(Date.now() - tick)}`);
                 tick = Date.now();
-                const lastVoterAllocation: IAllocation[] = await this.sqlite.getAllVotersLastAllocation();
+                const lastVoterAllocation: IAllocation[] = await this.sqlite.getAllVotersLastRecord();
                 this.logger.debug(`(LL) voters last known balances retrieved from LazyLedger db in ${msToHuman(Date.now() - tick)}`);
                 tick = Date.now();
                 let voterIndex=1;
@@ -548,9 +548,13 @@ export class Processor {
         const tick0 = Date.now();
         let loop: boolean = true;
         while (loop) {
+            let tick1 = Date.now();
             const lastChainedBlockHeight: number = await this.getLastBlockHeight();
+            this.logger.debug(`lastChainedBlockHeight retrieved in ${msToHuman(Date.now() - tick1)}`);
             // const lastForgedBlockHeight: number = await this.getLastForgedBlockHeight();
+            tick1 = Date.now();
             const lastForgedBlock: Interfaces.IBlockData | undefined = await this.getLastForgedBlock();
+            this.logger.debug(`lastForgedBlock retrieved in ${msToHuman(Date.now() - tick1)}`);
             const lastForgedBlockHeight: number = lastForgedBlock ? lastForgedBlock!.height : 0;
             const ourEpoch = this.configHelper.getFirstAllocatingPlan()?.height || 0; // NOTE TO SELF: must be run after async calls above
 
@@ -594,16 +598,16 @@ export class Processor {
                 }
                 else {
                     loop = false;
-                    this.logger.debug(`(LL) Sync complete > Last chained: #${lastChainedBlockHeight} | Last forged: #${lastForgedBlockHeight} | Last processed: #${lastProcessedBlockHeight}---`);
+                    this.logger.info(`(LL) Sync complete in ${msToHuman(Date.now() - tick0)} > Last chained: #${lastChainedBlockHeight} | Last forged: #${lastForgedBlockHeight} | Last processed: #${lastProcessedBlockHeight}---`);
                 }
             }
             else {
                 loop = false;
-                this.logger.debug(`(LL) Sync complete > Last chained: #${lastChainedBlockHeight} | Last forged: #${lastForgedBlockHeight} | Last processed: #${lastProcessedBlockHeight}---`);
                 if (this.initialSync && lastProcessedBlockHeight === lastForgedBlockHeight) {
                     this.logger.debug(`(LL) backlog processed in ${msToHuman(Date.now() - tick0)}`);
                     this.finishedInitialSync();
                 }
+                this.logger.info(`(LL) Sync complete in ${msToHuman(Date.now() - tick0)} > Last chained: #${lastChainedBlockHeight} | Last forged: #${lastForgedBlockHeight} | Last processed: #${lastProcessedBlockHeight}---`);
             }
         }
         this.syncing =false;

@@ -120,7 +120,21 @@ export class Database {
         return response;
     }
 
-    public getVoterAllocationAtHeight(height: number = 0): IAllocation[] {
+    public getVoterRecordAtHeight(address: string, height: number = 0): IAllocation {
+        const result = this.database
+            .prepare(`SELECT * FROM allocations WHERE address='${address}' AND height=${height ? height : "(SELECT MAX(height) FROM allocations)"}`)
+            .get();
+        
+        if (result) {
+            result.balance = Utils.BigNumber.make(result.balance);
+            result.orgBalance = Utils.BigNumber.make(result.orgBalance);
+            result.allotment = Utils.BigNumber.make(result.allotment);
+            result.validVote = Utils.BigNumber.make(result.validVote);
+        }
+        return result || "";
+    }
+    
+    public getAllVotersRecordAtHeight(height: number = 0): IAllocation[] {
         const result = this.database
             .prepare(`SELECT * FROM allocations WHERE height=${height ? height : "(SELECT MAX(height) FROM allocations)"} AND payeeType=${PayeeTypes.voter}`)
             .all();
@@ -134,7 +148,21 @@ export class Database {
         return result;
     }
     
-    public async getAllVotersLastAllocation(): Promise<IAllocation[]> {
+    public getVotersLastRecord(address: string): IAllocation {
+        const result = this.database
+            .prepare(`SELECT * FROM allocations WHERE address='${address}' ORDER BY height DESC LIMIT 1`)
+            .get();
+        
+        if (result) {
+            result.balance = Utils.BigNumber.make(result.balance);
+            result.orgBalance = Utils.BigNumber.make(result.orgBalance);
+            result.allotment = Utils.BigNumber.make(result.allotment);
+            result.validVote = Utils.BigNumber.make(result.validVote);
+        }
+        return result || "";
+    }
+    
+    public async getAllVotersLastRecord(): Promise<IAllocation[]> {
         const sqlstr = 
             `SELECT m.* FROM allocations m INNER JOIN (
                 SELECT address, MAX(height) as height from allocations

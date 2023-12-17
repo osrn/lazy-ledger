@@ -59,7 +59,7 @@ Then, proceed to [configuration section](#configuration).
 
 ## Upgrade
 ## Upgrading to latest version 
-See [Release 0.2.0 notes](#release-020)
+Last version 0.2.0 contains breaking changes. See [Release notes](#release-020) to upgrade.
 
 **Standart update procedure (unless otherwise instructed in release notes)**
 ```bash
@@ -485,8 +485,8 @@ cd ~
 4. restart relay `pm2 restart solar-relay`
 
 #### Changes
-- **Breaking!** moved sqlite database file location. See upgrade instructions below.
-- **Breaking!** separated configuration from Solar app.json. Now app.json only defines whether the plugin is enabled and location of the configuration file.
+- **Breaking!** moved sqlite database file location. See upgrade instructions.
+- **Breaking!** separated configuration from Solar app.json. Now, app.json only defines whether the plugin is enabled and plugin configuration file path.
 - new cli command `antibot`. added option to list antibot detected voters, hit frequency and antibot adjusted allotments total during a time frame.
 - new configuration options rewardMemo and rewardStamp. allows for customized reward transaction memo
 - stricter config options validation.
@@ -497,10 +497,10 @@ cd ~
 - replaced term `delegate` with `bp` in messages and notifications as applicable
 - performance improvements and bug squash
     - added new indexes to the sqlite database<sup>(*)</sup>
-    - increased block processing speed when blocks are being retrieved in real time (not catching a backlog) by utilizing the current information available from the blockRepository rather than replaying the transactions happened since last block forged on top of the state last saved in the local sqlite database
-    - fixed blocking operation when retrieving voter last balances from local db when processing blocks from backlog with large number of voters
-    - fixed plan payperiod out of bounds auto correction condition
-    - fixed issue plan mincap creation when plan does not specify one
+    - increased block processing speed when blocks are being retrieved in real time by utilizing the current information available from the blockRepository rather than replaying the transactions happened since last block forged on top of the state last saved in the local sqlite database
+    - fixed mainloop blocking when retrieving voter last balances from local db when processing a backlog of blocks with large number of voters
+    - fixed plan payperiod auto correction when out-of-bounds
+    - fixed plan mincap creation issue while plan does not specify one
     - added version information to boot time log messages
     - package `delay-5.0.0` replaced with `node:timers/promises`
     - cleanup obselete comments and dead code
