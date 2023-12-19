@@ -310,7 +310,6 @@ Flags
 solar ll:commitment --start=2022-09-16T18:00:00Z --end=2022-09-18 -v
 ```
 ```
-(LL) Opening database connection @ /home/solar/.local/share/solar-core/testnet/lltbw/lazy-ledger.sqlite
 Range contains 255 blocks and bounds are:
 [date)     : [Fri Sep 16 2022 21:00:00 GMT+0300 (GMT+03:00), Sun Sep 18 2022 03:00:00 GMT+0300 (GMT+03:00))
 [unixstamp): [1663351200, 1663459200)
@@ -362,7 +361,6 @@ Flags
 solar ll:antibot --start="2023-12-01T00:00:00Z"
 ```
 ```
-(LL) Opening database connection @ /home/solar/.local/share/solar-core/testnet/lltbw/lazy-ledger.sqlite
 Antibot has detected 1 addresses during the specified time frame:
 [date)     : [2023-12-01T00:00:00.000Z, 2023-12-19T11:16:03.033Z)
 [unixstamp): [1701388800, 1702984563)
@@ -573,15 +571,14 @@ requires `@solar-network/: ^4.1.0 || ^4.1.0-next.5`
 
 ## Roadmap
 Not necessarily in this order;
-- [ ] Database backup and periodic cleanup
-- [ ] Better logging
+- [ ] Database backup and maintenance (auto & manual)
 - [ ] Reload config without relay restart
 - [ ] Web dashboard
 - [ ] Payment periods > 24h
+- [X] ~~Telegram~~|Discord notifications
 - [X] Command to list antibot detected vote hoppers
 - [X] Custom transaction memo
 - [X] Move configuration from app.json to own config.json
-- [X] ~~Telegram~~|Discord notifications
 
 See [open issues](https://github.com/osrn/lazy-ledger/issues) for a full list of proposed features (and known issues).
 

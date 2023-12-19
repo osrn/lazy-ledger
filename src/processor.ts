@@ -59,7 +59,7 @@ export class Processor {
         // this.dc.sendmsg(`**${name} v${version}** booting ${emoji.high_brightness}\n**config**\n${inlineCode(logline)}`);
         this.sqlite = this.app.get<Database>(databaseSymbol);
         this.teller = this.app.get<Teller>(tellerSymbol);
-        this.init();
+        await this.init();
         this.logger.info("(LL) Processor boot complete");
     }
 
@@ -93,13 +93,12 @@ export class Processor {
     }
 
     private async getLastForgedBlock(): Promise<Interfaces.IBlockData | undefined> {
-        const myLastForgedBlock: { id: string; height: number; username: string; timestamp: number } = (await this.blockRepository.getLastForgedBlocks())
-            .filter( e => e.username === this.configHelper.getConfig().delegate)[0];
-        return await this.blockRepository.findByHeight(myLastForgedBlock.height);
+        // getting last forged block with the core functions is slower then direct database access!
+        // const myLastForgedBlock: { id: string; height: number; username: string; timestamp: number } = (await this.blockRepository.getLastForgedBlocks())
+        //     .filter( e => e.username === this.configHelper.getConfig().delegate)[0];
+        // return await this.blockRepository.findByHeight(myLastForgedBlock.height);
 
-        // retired previously used method in favor of core functions.
-        // return this.transactionRepository.getLastForgedBlock(this.configHelper.getConfig().delegate);
-
+        return this.transactionRepository.getLastForgedBlock(this.configHelper.getConfig().delegate);
     }
 
     // private async getLastForgedBlockHeight(): Promise<number> {
@@ -112,10 +111,13 @@ export class Processor {
     }
 
     private async init(): Promise<void> {
+        // let tick = Date.now();
         const lastForgedBlock: Interfaces.IBlockData | undefined = await this.getLastForgedBlock();
         const lastForgedBlockHeight: number = lastForgedBlock ? lastForgedBlock!.height : 0;
-
+        // this.logger.debug(`(LL) Retrieved last forged block height in ${msToHuman(Date.now() - tick)}`);
+        // tick = Date.now();
         this.lastProcessedBlockHeight = this.sqlite.getHeight();
+        // this.logger.debug(`(LL) Retrieved lastProcessedBlockHeight in ${msToHuman(Date.now() - tick)}`);
 
         // roll back if local db is ahead of the network, purging from the start of the round
         // (solar snapshot:rollback always starts from the start of the round, during which we may have 
@@ -154,7 +156,9 @@ export class Processor {
         }
 
         // find unsettled allocations and stamp if forged
-        this.txWatchPoolAdd(this.sqlite.getUnsettledAllocations());
+        // tick = Date.now();
+        this.txWatchPoolAdd(await this.sqlite.getUnsettledAllocations());
+        // this.logger.debug(`(LL) Retrieved UnsettledAllocations in ${msToHuman(Date.now() - tick)}`);
         for (const txid of this.txWatchPool) {
             const forgedTx = await this.transactionRepository.transactionRepository.findById(txid);
             if (forgedTx) {
@@ -166,8 +170,8 @@ export class Processor {
                 const logline = `Detected an unsettled allocation marked with an invalid tx`;
                 this.logger.critical(`(LL) ${logline} ${txid}`);
                 this.dc.sendmsg(`${emoji.rotating_light} ${logline} ${inlineCode(txid)}`);
-                //TODO: erase the TXid? or leave it to the bp to inspect and manually delete
-                //TODO: can be run as a periodic job, rather than running at relay restart only? (hence erased TXid can be paid in next payment run)
+                // TODO: erase the TXid? or leave it to the bp to inspect and manually delete
+                // TODO: can be run as a periodic job, rather than running at relay restart only? (hence erased TXid can be paid in next payment run)
             }
         }
 
@@ -237,19 +241,18 @@ export class Processor {
                     }
                     // Anti-bot: check for voter originated outbound transfers within 1 round following a forged block - only during real-time processing
                     // and reduce valid vote to the new wallet amount if voter wallet made an outbound transfer within the round
-                    // TODO: Cover other transaction methods.
                     else if (config.antibot && !this.initialSync) {
                         while (this.syncing) {
-                            await setTimeout(100);
+                            await setTimeout(100); //TODO: just return and not wait?
                         }
                         const whitelist = [...config.whitelist, config.bpWalletAddress];
                         const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
                         const lastVoterAllocation: IAllocation[] = this.sqlite.getAllVotersRecordAtHeight();
 
-                        if (lastForgedBlock && lastVoterAllocation.length > 0) { // always true unless brand new bp
+                        if (lastForgedBlock && lastVoterAllocation.length > 0) { // always true unless you are a brand new bp
                             const txRound = AppUtils.roundCalculator.calculateRound(txData.blockHeight!);
                             
-                            if (txRound.round - lastForgedBlock.round <= 1) { // look ahead 1 round
+                            if (txRound.round - lastForgedBlock.round <= 1) { // look ahead 1 round. TODO: look further ahead?
                                 const vrecord = lastVoterAllocation.filter( v => !whitelist.includes(v.address)) // exclude white-list
                                                                    .find( v => v.address === txData.senderId); 
 
