@@ -1,13 +1,15 @@
 import { Managers, Transactions, Utils } from "@solar-network/crypto";
 import { Container, Contracts, Providers, Utils as AppUtils} from "@solar-network/kernel";
+import { emoji } from "node-emoji";
 import { IBill, PayeeTypes } from "./interfaces";
 import { Database, databaseSymbol } from "./database";
-import { ConfigHelper, configHelperSymbol } from "./config_helper";
+import { inlineCode } from "discord.js";
+import { ConfigHelper, configHelperSymbol } from "./confighelper";
+import { DiscordHelper, discordHelperSymbol } from "./discordhelper";
 import { Processor } from "./processor";
 import { CronJob } from "cron";
-import delay from "delay";
-// import { Handlers } from "@solar-network/transactions";
-// import { CoreTransactionType, TransactionType, TransactionTypeGroup } from "@packages/crypto/dist/enums";
+import {setTimeout} from "node:timers/promises";
+import { msToHuman } from "./utils";
 
 export const tellerSymbol = Symbol.for("LazyLedger<Teller>");
 
@@ -28,13 +30,12 @@ export class Teller{
     @Container.inject(configHelperSymbol)
     private readonly configHelper!: ConfigHelper;
 
+    @Container.inject(discordHelperSymbol)
+    private readonly dc!: DiscordHelper;
+
     @Container.inject(Symbol.for("LazyLedger<Processor>"))
     private readonly processor!: Processor;
 
-    // @Container.inject(Container.Identifiers.TransactionHandlerRegistry)
-    // @Container.tagged("state", "copy-on-write")
-    // private readonly handlerRegistry!: Handlers.Registry;
-    
     @Container.inject(Container.Identifiers.PoolProcessor)
     private readonly poolProcessor!: Contracts.Pool.Processor;
 
@@ -62,12 +63,14 @@ export class Teller{
         const plan = this.configHelper.getPresentPlan(); 
         
         if (plan.payperiod == 0) {
-            this.logger.debug(`(LL) Teller schedule not started as Plan Payment Period is 0`);
+            const logline = "Teller schedule not started as Plan Payment Period is 0";
+            this.logger.warning(`(LL) ${logline}`);
+            this.dc.sendmsg(`${emoji.rotating_light} ${logline}`);
         }
         else {
             // When relay starts, we do not know how long had it been since last CRON run. 
             // If payperiod < 1 day, no trouble CRON can start as of today, however if payperiod spans multiple days,
-            // we need to find how many days since, and set an anchor point accordingly to run the next one right on schedule. 
+            // we need to find how many days past since, and set an anchor point accordingly to run the next one right on schedule. 
             const lastcron_ts = AppUtils.formatTimestamp(this.sqlite.getLastPayAttempt()?.timestamp || 0).unix;
             const today = new Date();
             const daysSinceLastCron = (today.setUTCHours(0,0,0,0) - new Date(lastcron_ts * 1000).setUTCHours(0,0,0,0)) / 86400000; //set the clock to 00:00 before getting the day difference
@@ -100,7 +103,9 @@ export class Teller{
 
     public instantPay(): void {
         if (!this.active) {
-            this.logger.debug(`(LL) Post-init instant payment request granted.`);
+            const logline = "Post-init instant payment request granted.";
+            this.logger.warning(`(LL) ${logline}`);
+            this.dc.sendmsg(`${emoji.rotating_light} ${logline}`);
             this.getBill();
         }
     }
@@ -119,11 +124,12 @@ export class Teller{
         const plan = this.configHelper.getPresentPlan();
         plan.payperiod ||= 24; // prevent div/0 if payperiod=0 with postInitInstantPay=true
 
-        // Filter out delegate address in allocations query?
-        const exclude: string | undefined = this.configHelper.getConfig().excludeSelfFrTx ? this.configHelper.getConfig().delegateAddress : undefined;
+        // Filter out bp address in allocations query?
+        const exclude: string | undefined = this.configHelper.getConfig().excludeSelfFrTx ? this.configHelper.getConfig().bpWalletAddress : undefined;
         // Fetch the allocations from local db
-        const bill: IBill[] = this.sqlite.getBill(plan.payperiod, plan.payoffset, now, exclude);
-        this.logger.debug(`(LL) Fetched ${bill.length} allocations from the database`);
+        const tick0 = Date.now();
+        const bill: IBill[] = this.sqlite.getBill(plan.payperiod, plan.payoffset, now, exclude); // TODO: refactor to async
+        this.logger.debug(`(LL) Fetched ${bill.length} allocations from the database in ${msToHuman(Date.now() - tick0)}`);
         // this.logger.debug(`(LL) trace: bill:IBill[]=\n${JSON.stringify(bill, null, 4)}`);
 
         if (bill.length == 0) {
@@ -172,16 +178,18 @@ export class Teller{
                 // this.logger.debug(`(LL) trace: chunk about to be passed to pay processor, chunk:IBill[]=\n${JSON.stringify(chunk, null, 4)}`);
                 if (txCounter >= maxTxPerSender) {
                     this.logger.debug(`(LL) Maximum transactions per sender limit (${maxTxPerSender}) reached. Waiting ${blockTime} seconds for the next block`);
-                    await delay(blockTime * 1000); //await next forging slot
+                    await setTimeout(1000); //await next forging slot
                     txCounter = 0;
                 }
                 // Unless mergeAddrsInTx enabled, chunk entries has the same y, m, d, q. Get the first entry to compose the memo
                 const fe = chunk[0];
-                let msgStamp = `${fe.y}-${fe.m}-${fe.d}-${fe.q}/${24/plan.payperiod}`;
-                let msg = `${this.configHelper.getConfig().delegate} rewards for ${msgStamp}`;
-                if (this.configHelper.getConfig().mergeAddrsInTx) {
-                    msgStamp = "";
-                    msg = `${this.configHelper.getConfig().delegate} reward sharing`;
+                let msg = this.configHelper.getConfig()?.rewardMemo ?
+                    this.configHelper.getConfig().rewardMemo :
+                    `${this.configHelper.getConfig().delegate} rewards`;
+                const msgStamp = this.configHelper.getConfig().mergeAddrsInTx ? "" : `${fe.y}-${fe.m}-${fe.d}-${fe.q}/${24/plan.payperiod}`;
+
+                if (this.configHelper.getConfig()?.rewardStamp && !this.configHelper.getConfig().mergeAddrsInTx) {
+                    msg = `${msg} for ${msgStamp}`;
                 }
 
                 // Pass to payment processor
@@ -215,16 +223,16 @@ export class Teller{
                     //TODO: notify and log error
                 }
                 chunkCounter++;
-                await delay(10);
+                await setTimeout(10);
             }
 
             if (txCounter >= maxTxPerSender) {
                 this.logger.debug(`(LL) Maximum transactions per sender limit (${maxTxPerSender}) reached. Waiting ${blockTime} seconds for the next block`);
-                await delay(blockTime * 1000); //await next forging slot
+                await setTimeout(blockTime * 1000); //await next forging slot
                 txCounter = 0;
             }
             else {
-                await delay(100);
+                await setTimeout(100);
             }
         }
         this.logger.debug(`(LL) Teller run complete. Next run is ${this.cronJob && this.cronJob.nextDates().toISOString()}`);
@@ -236,10 +244,7 @@ export class Teller{
         const config = this.configHelper.getConfig();
         const pool = this.app.get<Contracts.Pool.Service>(Container.Identifiers.PoolService);
         
-        let nonce = pool.getPoolWallet(config.delegateAddress!)?.getNonce().plus(1) || config.delegateWallet!.getNonce().plus(1);
-        // console.log("pool wallet"); console.log(pool.getPoolWallet(config.delegateAddress!));
-        // console.log("delegate wallet"); console.log(config.delegateWallet);
-
+        let nonce = pool.getPoolWallet(config.bpWalletAddress!)?.getNonce().plus(1) || config.bpWallet!.getNonce().plus(1);
         const dynfee = this.getDynamicFee(payments.length, msg.length, !!config.secondpass);
 
         const transaction = Transactions.BuilderFactory.multiPayment()
@@ -274,12 +279,13 @@ export class Teller{
         if (config.reservePaysFees && !config.mergeAddrsInTx && !feeDeducted) {
             this.logger.warning(`(LL) Chunk does not contain a reserve address or none of the reserve allocations are adequate to pay the transaction fee (${Utils.formatSatoshi(dynfee)}). Tx fee should be covered by the delegate wallet!`);
         }
-        const walletBalance = pool.getPoolWallet(config.delegateAddress!)?.getBalance() || config.delegateWallet!.getBalance();
+        const walletBalance = pool.getPoolWallet(config.bpWalletAddress!)?.getBalance() || config.bpWallet!.getBalance();
         if (walletBalance.isLessThan(txTotal.plus(dynfee))) {
             this.logger.critical(`(LL) Insufficient wallet balance to execute this pay order. Available:${Utils.formatSatoshi(walletBalance)} Required:${Utils.formatSatoshi(txTotal.plus(dynfee))}`);
+            this.dc.sendmsg(`${emoji.scream} Insufficient wallet balance to execute this pay order. Available:${inlineCode(Utils.formatSatoshi(walletBalance))} Required:${inlineCode(Utils.formatSatoshi(txTotal.plus(dynfee)))}`);
             return;
         }
-        this.logger.debug(`(LL) Sufficient wallet balance to execute this pay order. Available:${Utils.formatSatoshi(walletBalance)} Required:${Utils.formatSatoshi(txTotal.plus(dynfee))}`);
+        this.logger.debug(`(LL) Sufficient wallet balance to execute this pay order. Available:${Utils.formatSatoshi(walletBalance)} Required:${Utils.formatSatoshi(txTotal.plus(dynfee))} Will remain: ${Utils.formatSatoshi(walletBalance.minus(txTotal.plus(dynfee)))}`);
         transaction.sign(config.passphrase);
         if (config.secondpass) {
             transaction.secondSign(config.secondpass);
@@ -293,9 +299,11 @@ export class Teller{
 
         if (result.accept.length > 0) {
             this.logger.debug(`(LL) Transaction txid ${result.accept[0]} successfully sent!`);
+            this.dc.sendmsg(`${emoji.atm} Sent transaction for reward payment tagged ${inlineCode(msg)} with **amount:** ${inlineCode(Utils.formatSatoshi(txTotal))}, **fee:** ${inlineCode(Utils.formatSatoshi(dynfee))} | **New wallet balance:** ${inlineCode(Utils.formatSatoshi(walletBalance.minus(txTotal.plus(dynfee))))} | **Txid:** ${inlineCode(result.accept[0])}`);
         } 
         else {
-            this.logger.error("(LL) An error occurred sending transaction:");
+            this.logger.critical("(LL) An error occurred sending transaction:");
+            this.dc.sendmsg(`${emoji.scream} An error occurred with transaction for reward payment tagged ${inlineCode(msg)} with amount ${inlineCode(Utils.formatSatoshi(txTotal))} and fee ${inlineCode(Utils.formatSatoshi(dynfee))} | See logs for more information`);
             if (result.invalid.length > 0) {
                 this.logger.error(`(LL) ${result.errors![result.invalid[0]].type}: ${result.errors![result.invalid[0]].message}`);
             } else if (result.excess.length > 0) {
@@ -304,34 +312,6 @@ export class Teller{
         }
         return result.accept[0];
     }
-
-    /*private dynamicFee({addonBytes, satoshiPerByte, transaction}: Contracts.Shared.DynamicFeeContext): Utils.BigNumber {
-        addonBytes = addonBytes || 0;
-
-        if (satoshiPerByte <= 0) {
-            satoshiPerByte = 1;
-        }
-
-        const transactionSizeInBytes: number = Math.round(transaction.serialised.length / 2);
-        return Utils.BigNumber.make(addonBytes + transactionSizeInBytes).times(satoshiPerByte);
-    }
-
-    private getMinimumFee(transaction: Interfaces.ITransaction): Utils.BigNumber {
-        const milestone = Managers.configManager.getMilestone();
-
-        if (milestone.dynamicFees && milestone.dynamicFees.enabled) {
-            const addonBytes: number = milestone.dynamicFees.addonBytes[transaction.key];
-
-            const minFee: Utils.BigNumber = this.dynamicFee({
-                transaction,
-                addonBytes,
-                satoshiPerByte: milestone.dynamicFees.minFee,
-            });
-
-            return minFee;
-        }
-        return Utils.BigNumber.ZERO;
-    }*/
 
     private getDynamicFee(rcptCount:number, memoSize:number, hasSecondSig: boolean): Utils.BigNumber {
         const milestone = Managers.configManager.getMilestone();

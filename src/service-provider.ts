@@ -1,6 +1,8 @@
 import { Container, Contracts, Providers } from "@solar-network/kernel";
-import { ConfigHelper, configHelperSymbol } from "./config_helper";
+import { name, description, version } from "./package-details.json";
+import { ConfigHelper, configHelperSymbol } from "./confighelper";
 import { Database, databaseSymbol } from "./database";
+import { DiscordHelper, discordHelperSymbol } from "./discordhelper";
 import { Processor, processorSymbol } from "./processor";
 import { Teller, tellerSymbol } from "./teller";
 import { TxRepository, txRepositorySymbol } from "./tx_repository";
@@ -10,13 +12,13 @@ export class ServiceProvider extends Providers.ServiceProvider {
     private readonly logger!: Contracts.Kernel.Logger;
 
     public async register(): Promise<void> {
-        //this.app.bind<Controller>(this.controllerSymbol).to(Controller).inSingletonScope();
         this.app.bind<ConfigHelper>(configHelperSymbol).to(ConfigHelper).inSingletonScope();
+        this.app.bind<DiscordHelper>(discordHelperSymbol).to(DiscordHelper).inSingletonScope();
         this.app.bind<TxRepository>(txRepositorySymbol).to(TxRepository).inSingletonScope();;
         this.app.bind<Database>(databaseSymbol).to(Database).inSingletonScope();
         this.app.bind<Processor>(processorSymbol).to(Processor).inSingletonScope();
         this.app.bind<Teller>(tellerSymbol).to(Teller).inSingletonScope();
-        this.logger.info("@osrn/Lazy-Ledger (LL) Reward Sharing Plugin registered");
+        this.logger.info(`${name} ${description} v${version} registered`);
     }
 
     public async bootWhen(): Promise<boolean> {
@@ -24,14 +26,14 @@ export class ServiceProvider extends Providers.ServiceProvider {
     }
 
     public async boot(): Promise<void> {
-        //this.app.get<Controller>(this.controllerSymbol).boot();
         if (await this.app.get<ConfigHelper>(configHelperSymbol).boot()) {
-            this.app.get<Database>(databaseSymbol).boot();
-            this.app.get<Processor>(processorSymbol).boot();
-            this.app.get<Teller>(tellerSymbol).boot();
+            await this.app.get<DiscordHelper>(discordHelperSymbol).boot();
+            await this.app.get<Database>(databaseSymbol).boot();
+            await this.app.get<Processor>(processorSymbol).boot();
+            await this.app.get<Teller>(tellerSymbol).boot();
             this.logger.info("(LL) Plugin boot complete");
         }
         else
-            this.logger.error("(LL) Errors in plugin boot sequence. Not starting.");
+            this.logger.emergency("(LL) Errors in plugin boot sequence. Not starting.");
     }
 }

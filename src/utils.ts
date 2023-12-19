@@ -16,7 +16,12 @@
 export function padToNDigits(num: number, n: number): string {
     return num.toString().padStart(n, '0');
 }
-  
+
+/**
+ * Convert milliseconds to human readable string in h:m:s:ms format
+ * @param ms 
+ * @returns h:m:s:ms
+ */
 export function msToHuman(ms: number): string {
     let sec = Math.floor(ms / 1000);
     let min = Math.floor(sec / 60);

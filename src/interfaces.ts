@@ -2,22 +2,24 @@ import { Contracts } from "@solar-network/kernel";
 import { Utils } from "@solar-network/crypto";
 
 export interface IConfig extends Record<string, any> {
-    enabled: boolean;
-    delegate: string;           // delegate username
+    delegate: string;           // bp username
     plans: Array<IPlan>;        // reward sharing plans
-    passphrase: string;         // delegate wallet mnemonic passphrase
-    secondpass: string;         // delegate wallet second passphrase
-    excludeSelfFrTx: boolean;   // include delegate in transaction if reserve=delegate or delegate self voting
+    passphrase: string;         // bp wallet mnemonic passphrase
+    secondpass: string;         // bp wallet second passphrase
+    rewardMemo: string;         // reward transaction memo
+    rewardStamp: boolean;       // append reward time period stamp to the memo
+    excludeSelfFrTx: boolean;   // include bp in transaction if reserve=bp or bp self voting
     mergeAddrsInTx: boolean;    // summarize payments to same recipient
-    reservePaysFees: boolean;   // deduct transaction fee from the first reserve address allocation (at the time of actual payment) | delegate wallet needs sufficient funds for fee otherwise
+    reservePaysFees: boolean;   // deduct transaction fee from the first reserve address allocation (at the time of actual payment) | bp wallet needs sufficient funds for fee otherwise
     shareEarnedFees: boolean;   // include earned transaction fees (=unburned 10%) in reserve, voter and donee allocations
-    reserveGetsFees: boolean;   // when earned fees are not shared, allocate transaction fees to the first reserve address | stays in delegate wallet otherwise)
+    reserveGetsFees: boolean;   // when earned fees are not shared, allocate transaction fees to the first reserve address | stays in bp wallet otherwise)
     postInitInstantPay: boolean;// make a payment run immediately after plugin starts following initial sync
     antibot: boolean;           // anti-bot processing active if true
-    whitelist: string[];        // addresses exempt from anti-bot processing (delegate address is automatically whitelisted)
-    delegateWallet?: Contracts.State.Wallet; // for internal use
-    delegateAddress?: string;   // for internal use
-    delegatePublicKey?: string; // for internal use
+    whitelist: string[];        // addresses exempt from anti-bot processing (bp address is automatically whitelisted)
+    discord?: {webhookId: string, webhookToken: string, mention: string, botname: string};
+    bpWallet?: Contracts.State.Wallet; // for internal use
+    bpWalletAddress?: string;   // for internal use
+    bpWalletPublicKey?: string; // for internal use
 }
 
 export interface IPlan extends Record<string, any> {
@@ -68,8 +70,8 @@ export interface IAllocation {
     payeeType: PayeeTypes;          // payee type
     balance: Utils.BigNumber;       // wallet balance. 0 if reserve|donee
     orgBalance: Utils.BigNumber;    // original wallet balance before antibot. 0 if reserve|donee
-    votePercent: number;            // percent voting for delegate. 0 if reserve|donee
-    orgVotePercent: number;         // original percent voting for delegate before antibot. 0 if reserve|donee
+    votePercent: number;            // percent voting for bp. 0 if reserve|donee
+    orgVotePercent: number;         // original percent voting for bp before antibot. 0 if reserve|donee
     validVote: Utils.BigNumber;     // effective voting balance after mincap|maxcap|blacklist|antibot. 0 if reserve|donee
     shareRatio: number;             // reward share percentage at block height
     allotment: Utils.BigNumber;     // reward amount allocated
@@ -116,4 +118,17 @@ export enum PendingTypes {
     due = 0,
     current,
     all
+}
+
+export interface IQueueItem {
+    resolve: (v?: {} | PromiseLike<{}>) => void;
+    reject: (reason?: any) => void;
+    job: IWorkerJob;
+    // lazyTask: () => Promise<{}>;
+};
+  
+export interface IWorkerJob {
+    id: string;
+    customer: string;
+    data: string;
 }
