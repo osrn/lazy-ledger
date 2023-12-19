@@ -128,7 +128,7 @@ export class Teller{
         const exclude: string | undefined = this.configHelper.getConfig().excludeSelfFrTx ? this.configHelper.getConfig().bpWalletAddress : undefined;
         // Fetch the allocations from local db
         const tick0 = Date.now();
-        const bill: IBill[] = this.sqlite.getBill(plan.payperiod, plan.payoffset, now, exclude);
+        const bill: IBill[] = this.sqlite.getBill(plan.payperiod, plan.payoffset, now, exclude); // TODO: refactor to async
         this.logger.debug(`(LL) Fetched ${bill.length} allocations from the database in ${msToHuman(Date.now() - tick0)}`);
         // this.logger.debug(`(LL) trace: bill:IBill[]=\n${JSON.stringify(bill, null, 4)}`);
 

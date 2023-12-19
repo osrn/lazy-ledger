@@ -536,13 +536,26 @@ ON al.height = fb.height;
         }
     }
 
-    public getUnsettledAllocations(): string[] {
+    public async getUnsettledAllocations(): Promise<string[]> {
+        const sqlstr = 
+            `SELECT DISTINCT transactionId FROM allocations a WHERE transactionId != '' AND settled = 0`;
+
+        const job: IWorkerJob = {
+            id: new ObjectId().toHexString(),
+            customer: "getUnsettledAllocations",
+            data: sqlstr,
+        }
         try {
-            const result = this.database
-            .prepare(`SELECT DISTINCT transactionId FROM allocations a WHERE transactionId != '' AND settled = 0`)
-            .all();
-            return result.map( (r) => r.transactionId )
-        } catch (error) {
+            const result = (await this.taskQueue.addTask(job)) as unknown as IAllocation[];
+            result.forEach(r => { 
+                r.balance = Utils.BigNumber.make(r.balance);
+                r.orgBalance = Utils.BigNumber.make(r.orgBalance);
+                r.allotment = Utils.BigNumber.make(r.allotment);
+                r.validVote = Utils.BigNumber.make(r.validVote);
+            });
+            return result.map( (r) => r.transactionId );
+        } 
+        catch (error) {
             this.logger.critical("(LL) Error retrieving unsettled allocations from the database");
             this.logger.critical(error.message);
             this.dc.sendmsg(`${emoji.biohazard_sign} Error retrieving unsettled allocations from the database`);
