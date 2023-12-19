@@ -50,7 +50,7 @@ git clone https://github.com/osrn/lazy-ledger
 cd lazy-ledger
 CFLAGS="$CFLAGS" CPATH="$CPATH" LDFLAGS="$LDFLAGS" LD_LIBRARY_PATH="$LD_LIBRARY_PATH" pnpm install
 pnpm build
-# Following is necessary for solar registration of cli commands
+# Following is necessary for registration of cli commands
 cd ~/.local/share/solar-core/{mainnet|testnet}/plugins/
 mkdir '@osrn' && cd '@osrn'
 ln -s ~/solar-core/plugins/lazy-ledger lazy-ledger
@@ -231,33 +231,15 @@ Flags
 solar ll:alloc
 ```
 ```
-Retrieving data from last block ...
-[
-  {
-    round: 24824,
-    height: 1315624,
-    forgedTime: '20220908-201736',
-    reward: 11,
-    earnedRewards: 9.9,
-    earnedFees: 0,
-    netReward: 9.9,
-    validVotes: 2323102.02340695,
-    address: 'D646b6dx3sW5NAgMDTKAZ2hdC57K1BeRaK',
-    payeeType: 1,
-    balance: 107246009.42079204,
-    votePercent: 1.89,
-    vote: 2026949.5780529696,
-    validVote: 2026949.57805296,
-    shareRatio: 20,
-    allotment: 1.7275867,
-    bookedTime: '20220908-201737',
-    transactionId: '',
-    settledTime: 0,
-    orgBalance: 107246009.42079204,
-    orgVotePercent: 1.89
-  },
-  ...
-]
+Retrieving data from last forged round ...
+┌───────┬────────┬─────────────────────┬───────────┬────────────────────────────────────┬──────┬─────────────────┬────────────┬─────────────────────┬─────────────┐
+│ round │ height │ forgedTime          │ netReward │ address                            │ type │ validVote       │ allotment  │ bookedTime          │ settledTime │
+│ 842   │ 44589  │ 2023-12-16 21:29:00 │ 11.7      │ DMJVoAY1rvwVkpucasPAg2rupkxbYsLcye │ 1    │ 1000.13167227   │ 0.00023801 │ 2023-12-16 21:29:00 │ 0           │
+│ 842   │ 44589  │ 2023-12-16 21:29:00 │ 11.7      │ DMMJe5zBz4rUrMTXyknrCSHhiJvC3ZvtJu │ 1    │ 1000.13167227   │ 0.00023801 │ 2023-12-16 21:29:00 │ 0           │
+│ 842   │ 44589  │ 2023-12-16 21:29:00 │ 11.7      │ DTEBVe6YqNoAy1DJzzcToiRnsapN7WUJk7 │ 1    │ 9556917.1493624 │ 2.27434657 │ 2023-12-16 21:29:00 │ 0           │
+│ 842   │ 44589  │ 2023-12-16 21:29:00 │ 11.7      │ DNrxmrPcZrcRgv9ZbR1N5iTyeVJbE5Ukqc │ 1    │ 15844.73576662  │ 0.00377071 │ 2023-12-16 21:29:00 │ 0           │
+│ 842   │ 44589  │ 2023-12-16 21:29:00 │ 11.7      │ DNrxmrPcZrcRgv9ZbR1N5iTyeVJbE5Ukqc │ 0    │ 0               │ 9.36       │ 2023-12-16 21:29:00 │ 0           │
+└───────┴────────┴─────────────────────┴───────────┴────────────────────────────────────┴──────┴─────────────────┴────────────┴─────────────────────┴─────────────┘
 ```
 ---
 ### :lastpaid
@@ -317,7 +299,7 @@ Retrieving pending allocations since last payment ...
 ---
 ### :commitment
 **`solar ll:commitment --start <datetime> --end <datetime> [-v]`**<br>
-shows voter commitment (voting balance not reduced) during a time frame
+shows voter commitment (voting balance not reduced) during the specified time frame
 ```
 Flags
 --start      Start date (YYYY-MM-DDTHH:mm:ss.sssZ | YYYY-MM-DDTHH:mm:ss.sss+-hh:mm), included.
@@ -377,18 +359,43 @@ Flags
 --raw        Short for format="raw". Overrides --format and --json
 ```
 ```bash
-solar ll:antibot --start=2023-12-01T00:00:00Z
+solar ll:antibot --start="2023-12-01T00:00:00Z"
 ```
 ```
 (LL) Opening database connection @ /home/solar/.local/share/solar-core/testnet/lltbw/lazy-ledger.sqlite
-Antibot has detected 1 addresses during the given timeframe:
-[date)     : [2023-01-01T00:00:00.000Z, 2023-12-11T20:23:14.304Z)
-[unixstamp): [1672531200, 1702326194)
-┌────────────────────────────────────┬──────┬──────────┐
-│              (index)               │ hits │ allotted │
-├────────────────────────────────────┼──────┼──────────┤
-│ D5amxBtrXduR8M97xA2KvU1zp5UnJC2oZR │  1   │ '0 tSXP' │
-└────────────────────────────────────┴──────┴──────────┘
+Antibot has detected 1 addresses during the specified time frame:
+[date)     : [2023-12-01T00:00:00.000Z, 2023-12-19T11:16:03.033Z)
+[unixstamp): [1701388800, 1702984563)
+┌────────────────────────────────────┬────────────┬──────────┐
+│              (index)               │ blockcount │ allotted │
+│ D5amxBtrXduR8M97xA2KvU1zp5UnJC2oZR │  1         │ 0 tSXP   │
+└────────────────────────────────────┴────────────┴──────────┘
+```
+---
+### :botscan
+**`solar ll:botscan -f bots.json --start <datetime> [--end <datetime>] [--raw | --json | --format="std | json | raw"]`**<br>
+scan the ledger for addresses and allocated rewards during the specified time frame
+```
+Flags
+--f          Path to json formatted file with an array of unique wallet addresses.
+--start      Start date (YYYY-MM-DDTHH:mm:ss.sssZ | YYYY-MM-DDTHH:mm:ss.sss+-hh:mm), included.
+--end        End date (YYYY-MM-DDTHH:mm:ss.sssZ | YYYY-MM-DDTHH:mm:ss.sss+-hh:mm), excluded.
+--format     Display output as standard, formatted JSON or raw
+--json       Short for format="all". Overrides --format
+--raw        Short for format="raw". Overrides --format and --json
+```
+```bash
+solar ll:botscan -f ~/bots.json --start="2023-12-01T00:00:00Z"
+```
+```
+parsed 1 addresses from the input file: Sa1GLfuEGcijwo8JdrqJF4kEgkJwcQd4qS
+Scan matched 1 records in the ledger during the specified time frame:
+[date)     : [2023-12-01T00:00:00.000Z, 2023-12-19T11:16:03.033Z)
+[unixstamp): [1701388800, 1702984563)
+┌────────────────────────────────────┬────────────┬─────────────────┬───────────────┐
+│ address                            │ blockcount │ orgAllotted     │ allotted      │
+│ D5amxBtrXduR8M97xA2KvU1zp5UnJC2oZR │ 12         │ 2.15567284 dSXP │ 0 dSXP        │
+└────────────────────────────────────┴────────────┴─────────────────┴───────────────┘
 ```
 ---
 ### :rollback
@@ -462,7 +469,7 @@ You are welcome to make any other accuracy checks by direct database query.
 #### Before upgrading
 1. stop relay `pm2 stop solar-relay`
 1. backup your database `tar -cPzf ~/lazy-ledger.backup-$(date +%Y%m%d-%H%M%S).tar.gz ~/.local/share/solar-core/{mainnet|testnet}/lazy-ledger*`
-1. create a subfolder and move your database:
+1. move your database into a subfolder:
 ```bash
 cd  ~/.local/share/solar-core/{mainnet|testnet}
 mkdir lltbw
@@ -487,8 +494,9 @@ cd ~
 #### Changes
 - **Breaking!** moved sqlite database file location. See upgrade instructions.
 - **Breaking!** separated configuration from Solar app.json. Now, app.json only defines whether the plugin is enabled and plugin configuration file path.
-- new cli command `antibot`. added option to list antibot detected voters, hit frequency and antibot adjusted allotments total during a time frame.
-- new configuration options rewardMemo and rewardStamp. allows for customized reward transaction memo
+- new cli command `antibot`. lists antibot detected voters, hit frequency, original and antibot adjusted allotments total during speficied time frame.
+- new cli command `botscan`. scans ledger for the specified addreses, displaying number of blocks a reward was allocated, original and antibot adjusted allotments total during specified time frame.
+- new configuration options `rewardMemo` and `rewardStamp`, allows customizing the reward transaction memo
 - stricter config options validation.
 - discord notifications 
     - when plugin boots
@@ -499,11 +507,11 @@ cd ~
     - added new indexes to the sqlite database<sup>(*)</sup>
     - increased block processing speed when blocks are being retrieved in real time by utilizing the current information available from the blockRepository rather than replaying the transactions happened since last block forged on top of the state last saved in the local sqlite database
     - fixed mainloop blocking when retrieving voter last balances from local db when processing a backlog of blocks with large number of voters
-    - fixed plan payperiod auto correction when out-of-bounds
+    - fixed plan payperiod out-of-bounds auto correction
     - fixed plan mincap creation issue while plan does not specify one
-    - added version information to boot time log messages
+    - added version information to boot time messages
     - package `delay-5.0.0` replaced with `node:timers/promises`
-    - cleanup obselete comments and dead code
+    - cleanup obsolete comments and code
 
 > <sup>(*)</sup> You may observe a prolonged plugin database boot duration during the first restart after the upgrade, due to creation of new indexes.
 
@@ -568,7 +576,7 @@ Not necessarily in this order;
 - [ ] Database backup and periodic cleanup
 - [ ] Better logging
 - [ ] Reload config without relay restart
-- [ ] Web|console dashboard
+- [ ] Web dashboard
 - [ ] Payment periods > 24h
 - [X] Command to list antibot detected vote hoppers
 - [X] Custom transaction memo

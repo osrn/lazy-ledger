@@ -227,7 +227,7 @@ const isWalletAddress = (address: string) => {
     return address;
 };
 
-const joiRules = {
+export const joiRules = {
     bpUsername: Joi.string().min(1).max(20).regex(/^(?!_)(?=.*[a-z!@$&_.])([a-z0-9!@$&_.]?)+$/),
     walletAddress: Joi.string().length(34).custom(isWalletAddress),
     walletAddressList: Joi.array().items(Joi.string().length(34).custom(isWalletAddress)).unique(),

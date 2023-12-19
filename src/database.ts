@@ -44,43 +44,130 @@ export class Database {
         //NOTE: SQLITE fields data type definitions are just for documentation purposes by SQLite Design
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         this.database.exec(`
-            PRAGMA journal_mode=WAL;
-            CREATE TABLE IF NOT EXISTS forged_blocks (round INTEGER NOT NULL, height INTEGER NOT NULL PRIMARY KEY, timestamp NUMERIC NOT NULL, delegate TEXT NOT NULL, reward TEXT NOT NULL, solfunds TEXT NOT NULL, fees TEXT NOT NULL, burnedFees TEXT NOT NULL, votes TEXT, validVotes TEXT, orgValidVotes TEXT, voterCount INTEGER) WITHOUT ROWID;
-            CREATE TABLE IF NOT EXISTS missed_blocks (round INTEGER NOT NULL, height INTEGER NOT NULL, delegate TEXT NOT NULL, timestamp NUMERIC PRIMARY KEY NOT NULL) WITHOUT ROWID;
-            CREATE TABLE IF NOT EXISTS allocations (height INTEGER NOT NULL, address TEXT NOT NULL, payeeType INTEGER NOT NULL, balance TEXT NOT NULL, orgBalance TEXT NOT NULL, votePercent INTEGER NOT NULL, orgVotePercent INTEGER NOT NULL, validVote TEXT NOT NULL, shareRatio INTEGER, allotment TEXT, booked NUMERIC, transactionId TEXT, settled NUMERIC, PRIMARY KEY (height, address, payeeType));
-            CREATE INDEX IF NOT EXISTS forged_blocks_delegate_timestamp ON forged_blocks (delegate, timestamp);
-            CREATE INDEX IF NOT EXISTS forged_blocks_delegate_round on forged_blocks (delegate, round);
-            CREATE INDEX IF NOT EXISTS forged_blocks_timestamp ON forged_blocks ("timestamp");
-            CREATE INDEX IF NOT EXISTS forged_blocks_round_height_timestamp ON forged_blocks (round,height,"timestamp");
-            CREATE INDEX IF NOT EXISTS missed_blocks_delegate on missed_blocks (delegate);
-            CREATE INDEX IF NOT EXISTS allocations_transactionId ON allocations (transactionId);
-            CREATE INDEX IF NOT EXISTS allocations_booked ON allocations (booked);
-            CREATE INDEX IF NOT EXISTS allocations_settled ON allocations (settled);
-            CREATE INDEX IF NOT EXISTS allocations_address ON allocations (address);
-            CREATE VIEW IF NOT EXISTS missed_rounds AS SELECT missed_blocks.* FROM missed_blocks LEFT OUTER JOIN forged_blocks ON missed_blocks.delegate = forged_blocks.delegate AND missed_blocks.round = forged_blocks.round WHERE forged_blocks.delegate IS NULL;
-            DROP VIEW IF EXISTS forged_blocks_human;
-            CREATE VIEW forged_blocks_human AS
-                SELECT round, height, strftime('%Y-%m-%d %H:%M:%S', timestamp+${t0}, 'unixepoch') AS forgedTime, 
-                    reward/${Constants.SATOSHI}.0 as reward, solfunds/${Constants.SATOSHI}.0 as solfunds, fees/${Constants.SATOSHI}.0 as fees, burnedFees/${Constants.SATOSHI}.0 as burnedFees, 
-                    (reward - solfunds)/${Constants.SATOSHI}.0 AS earnedRewards, 
-                    (fees - burnedFees)/${Constants.SATOSHI}.0 AS earnedFees, 
-                    (reward - solfunds + fees - burnedFees)/${Constants.SATOSHI}.0 AS netReward, 
-                    voterCount AS voters, votes/${Constants.SATOSHI}.0 AS votes, validVotes/${Constants.SATOSHI}.0 AS validVotes 
-                FROM forged_blocks;
-            DROP VIEW IF EXISTS allocated_human;
-            CREATE VIEW allocated_human AS
-                SELECT rowid, height, address, payeeType, balance/${Constants.SATOSHI}.0 AS balance, votePercent, 
-                    balance * votePercent / 100 / ${Constants.SATOSHI}.0 as vote, validVote/${Constants.SATOSHI}.0 AS validVote, 
-                    shareRatio, allotment/${Constants.SATOSHI}.0 AS allotment, strftime('%Y-%m-%d %H:%M:%S', booked, 'unixepoch') AS bookedTime, 
-                    transactionId, CASE WHEN settled = 0 THEN 0 ELSE strftime('%Y-%m-%d %H:%M:%S', settled , 'unixepoch') END AS settledTime, 
-                    orgBalance/${Constants.SATOSHI}.0 AS orgBalance, orgVotePercent
-                FROM allocations ORDER BY height DESC;
-            DROP VIEW IF EXISTS the_ledger;
-            CREATE VIEW the_ledger AS
-                SELECT b.round, a.height, b.forgedTime, b.reward, b.earnedRewards, b.earnedFees, b.netReward, 
-                    b.validVotes, a.address, a.payeeType, a.balance, a.votePercent, a.vote, a.validVote, 
-                    a.shareRatio, a.allotment, a.bookedTime, a.transactionId, a.settledTime, a.orgBalance, a.orgVotePercent 
-                FROM allocated_human a LEFT JOIN forged_blocks_human b ON a.height = b.height;
+PRAGMA journal_mode=WAL;
+CREATE TABLE IF NOT EXISTS forged_blocks (round INTEGER NOT NULL, height INTEGER NOT NULL PRIMARY KEY, timestamp NUMERIC NOT NULL, delegate TEXT NOT NULL, reward TEXT NOT NULL, solfunds TEXT NOT NULL, fees TEXT NOT NULL, burnedFees TEXT NOT NULL, votes TEXT, validVotes TEXT, orgValidVotes TEXT, voterCount INTEGER) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS missed_blocks (round INTEGER NOT NULL, height INTEGER NOT NULL, delegate TEXT NOT NULL, timestamp NUMERIC PRIMARY KEY NOT NULL) WITHOUT ROWID;
+CREATE TABLE IF NOT EXISTS allocations (height INTEGER NOT NULL, address TEXT NOT NULL, payeeType INTEGER NOT NULL, balance TEXT NOT NULL, orgBalance TEXT NOT NULL, votePercent INTEGER NOT NULL, orgVotePercent INTEGER NOT NULL, validVote TEXT NOT NULL, shareRatio INTEGER, allotment TEXT, booked NUMERIC, transactionId TEXT, settled NUMERIC, PRIMARY KEY (height, address, payeeType));
+CREATE INDEX IF NOT EXISTS forged_blocks_delegate_timestamp ON forged_blocks (delegate, timestamp);
+CREATE INDEX IF NOT EXISTS forged_blocks_delegate_round on forged_blocks (delegate, round);
+CREATE INDEX IF NOT EXISTS forged_blocks_timestamp ON forged_blocks ("timestamp");
+CREATE INDEX IF NOT EXISTS forged_blocks_round_height_timestamp ON forged_blocks (round,height,"timestamp");
+CREATE INDEX IF NOT EXISTS missed_blocks_delegate on missed_blocks (delegate);
+CREATE INDEX IF NOT EXISTS allocations_transactionId ON allocations (transactionId);
+CREATE INDEX IF NOT EXISTS allocations_booked ON allocations (booked);
+CREATE INDEX IF NOT EXISTS allocations_settled ON allocations (settled);
+CREATE INDEX IF NOT EXISTS allocations_address ON allocations (address);
+CREATE VIEW IF NOT EXISTS missed_rounds AS SELECT missed_blocks.* FROM missed_blocks LEFT OUTER JOIN forged_blocks ON missed_blocks.delegate = forged_blocks.delegate AND missed_blocks.round = forged_blocks.round WHERE forged_blocks.delegate IS NULL;
+DROP VIEW IF EXISTS forged_blocks_human;
+CREATE VIEW forged_blocks_human AS
+SELECT
+    round,
+    height,
+    strftime('%Y-%m-%d %H:%M:%S', timestamp + ${t0}, 'unixepoch') AS forgedTime,
+    reward / ${Constants.SATOSHI}.0 as reward,
+    solfunds / ${Constants.SATOSHI}.0 as solfunds,
+    fees / ${Constants.SATOSHI}.0 as fees,
+    burnedFees / ${Constants.SATOSHI}.0 as burnedFees,
+    (reward - solfunds)/ ${Constants.SATOSHI}.0 AS earnedRewards,
+    (fees - burnedFees)/ ${Constants.SATOSHI}.0 AS earnedFees,
+    (reward - solfunds + fees - burnedFees)/ ${Constants.SATOSHI}.0 AS netReward,
+    voterCount AS voters,
+    votes / ${Constants.SATOSHI}.0 AS votes,
+    validVotes / ${Constants.SATOSHI}.0 AS validVotes
+FROM
+    forged_blocks;
+DROP VIEW IF EXISTS allocated_human;
+CREATE VIEW allocated_human AS
+SELECT
+    rowid,
+    height,
+    address,
+    payeeType,
+    balance / ${Constants.SATOSHI}.0 AS balance,
+    votePercent,
+    balance * votePercent / 100 / ${Constants.SATOSHI}.0 as vote,
+    validVote / ${Constants.SATOSHI}.0 AS validVote,
+    shareRatio,
+    allotment / ${Constants.SATOSHI}.0 AS allotment,
+    strftime('%Y-%m-%d %H:%M:%S', booked, 'unixepoch') AS bookedTime,
+    transactionId,
+    CASE
+        WHEN settled = 0 THEN 0
+        ELSE strftime('%Y-%m-%d %H:%M:%S', settled , 'unixepoch')
+    END AS settledTime,
+    orgBalance / ${Constants.SATOSHI}.0 AS orgBalance,
+    orgVotePercent
+FROM
+    allocations
+ORDER BY
+    height DESC;
+DROP VIEW IF EXISTS the_ledger;
+CREATE VIEW the_ledger AS
+SELECT
+    fb.round,
+    al.height,
+    fb.forgedTime,
+    fb.reward,
+    fb.earnedRewards,
+    fb.earnedFees,
+    fb.netReward,
+    fb.validVotes,
+    al.address,
+    al.payeeType,
+    al.balance,
+    al.votePercent,
+    al.vote,
+    al.validVote,
+    al.shareRatio,
+    al.allotment,
+    al.bookedTime,
+    al.transactionId,
+    al.settledTime,
+    al.orgBalance,
+    al.orgVotePercent
+FROM
+    allocated_human al
+LEFT JOIN forged_blocks_human fb ON
+    al.height = fb.height;
+DROP VIEW IF EXISTS newLedger;
+CREATE VIEW newLedger AS 
+SELECT
+	al.rowid,
+    fb.round, 
+    al.height, 
+    fb."timestamp" AS forgedSolarts,
+	strftime('%Y-%m-%d %H:%M:%S', fb."timestamp" + ${t0}, 'unixepoch') AS forgedTime,
+    al.address,
+    al.payeeType,
+    al.shareRatio AS bpShareRatio, 
+    al.orgBalance, 
+    al.balance,
+    al.orgVotePercent,
+    al.votePercent,
+    fb.bpOrgValidVoteTotal, 
+    fb.bpFinalValidVoteTotal,
+    fb.bpNetBlockReward, 
+    ROUND(fb.bpNetBlockReward * al.shareRatio * CAST(al.orgBalance AS INTEGER) * al.orgVotePercent / 100 / 100 / fb.bpOrgValidVoteTotal) AS orgAllotment,
+    CAST(al.allotment AS INTEGER) AS finalAllotment,
+    al.booked as bookedts,
+    strftime('%Y-%m-%d %H:%M:%S', al.booked, 'unixepoch') AS bookedTime,
+    al.settled as settledts,
+    CASE
+        WHEN settled = 0 THEN 0
+        ELSE strftime('%Y-%m-%d %H:%M:%S', settled , 'unixepoch')
+    END AS settledTime
+FROM allocations al
+LEFT JOIN (
+    SELECT 
+        "timestamp", 
+        round, 
+        height, 
+        (reward - solfunds) AS bpNetBlockReward, 
+        CAST(orgValidVotes AS INTEGER) AS bpOrgValidVoteTotal,
+        CAST(validVotes AS INTEGER) AS bpFinalValidVoteTotal
+    FROM forged_blocks
+) AS fb 
+ON al.height = fb.height;
         `);
         this.database.pragma("journal_mode = WAL");
         this.triggers(true);
@@ -295,40 +382,54 @@ export class Database {
      * @param network 
      * @returns 
      */
-    public getAntibot(start: number, end: number, network?: Types.NetworkName): {address: string; hits: number; allotted: Utils.BigNumber}[] {
+    public getAntibot(start: number, end: number, network?: Types.NetworkName): {address: string; blockcount: number; allotted: Utils.BigNumber}[] {
         if (typeof network !== "undefined" && Object.keys(Networks).includes(network!)) {
             Managers.configManager.setFromPreset(network!);
         } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         const result = this.database.prepare(
-           `SELECT address, COUNT(address) as hits, SUM(allotment)/${Constants.SATOSHI}.0 as allotted
-            FROM (
-                SELECT 
-                    al.address, 
-                    al.orgBalance, 
-                    al.balance,
-                    al.orgVotePercent,
-                    al.votePercent,
-                    al.allotment
-                FROM allocations al 
-                INNER JOIN (
-                    --- retrieve block timestamp, round, height, netreward earned, antibot adjusted votes during the timeframe
-                    SELECT 
-                        timestamp, 
-                        height
-                    FROM forged_blocks
-                    WHERE (${t0} + "timestamp") >= ${start}
-                      AND (${t0} + "timestamp") < ${end}
-                ) AS fb ON al.height = fb.height
-                WHERE 
-                    CAST(al.balance AS INTEGER) < CAST(al.orgBalance AS INTEGER)
-                    OR al.votePercent < al.orgVotePercent
-            ) GROUP BY address ORDER BY address ASC;`)
+            `SELECT address, COUNT(address) as blockcount, SUM(orgAllotment) as orgAllotted, SUM(finalAllotment) as allotted
+            FROM newLedger
+            WHERE (${t0} + forgedSolarts) >= ${start}
+              AND (${t0} + forgedSolarts) < ${end} 
+              AND (CAST(balance AS INTEGER) < CAST(orgBalance AS INTEGER) OR votePercent < orgVotePercent)
+            GROUP BY address ORDER BY address ASC;`)
         .all();
         
-        // convert allotted to bignumber
-        result.forEach( e => e.allotted = Utils.BigNumber.make(e.allotted) );
+        // convert allottments to bignumber
+        result.forEach( e => { 
+            e.orgAllotted = Utils.BigNumber.make(e.orgAllotted); 
+            e.allotted = Utils.BigNumber.make(e.allotted); 
+        });
+        return result;
+    }
 
+    /**
+     * Scan the ledger for addresses and allocated rewards during the specified time frame
+     * @param start 
+     * @param end 
+     * @param network 
+     * @returns 
+     */
+    public scanBots(addresses: string[], start: number, end: number, network?: Types.NetworkName): {address: string; blockcount: number; allotted: Utils.BigNumber}[] {
+        if (typeof network !== "undefined" && Object.keys(Networks).includes(network!)) {
+            Managers.configManager.setFromPreset(network!);
+        } 
+        const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
+        const result = this.database.prepare(
+           `SELECT address, COUNT(address) as blockcount, SUM(orgAllotment) as orgAllotted, SUM(finalAllotment) as allotted
+            FROM newLedger
+            WHERE address IN (${[...addresses.map(e => `'${e}'`)]})
+              AND (${t0} + forgedSolarts) >= ${start}
+              AND (${t0} + forgedSolarts) < ${end}
+            GROUP BY address ORDER BY address ASC;`)
+        .all();
+        
+        // convert allottments to bignumber
+        result.forEach( e => { 
+            e.orgAllotted = Utils.BigNumber.make(e.orgAllotted); 
+            e.allotted = Utils.BigNumber.make(e.allotted); 
+        });
         return result;
     }
 

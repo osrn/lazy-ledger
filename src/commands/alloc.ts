@@ -20,7 +20,7 @@ export class Command extends Commands.Command {
             .setFlag("network", "The name of the network", Joi.string().valid(...Object.keys(Networks)))
             .setFlag("height", "Block height. Last block if missing or 0.", Joi.number().integer().min(0))
             .setFlag("round", "Round. Last round if missing or 0.", Joi.number().integer().min(0))
-            .setFlag("format", "Display output as standard, formatted JSON or raw", Joi.string().valid("std", "json", "raw").default("std"))
+            .setFlag("format", "Display output as table (summary), formatted JSON (full) or raw (full)", Joi.string().valid("std", "json", "raw").default("std"))
             .setFlag("json", "Short for format=\"json\". Overrides --format.", Joi.boolean().default(false))
             .setFlag("raw", "Short for format=\"raw\". Overrides --format and --json", Joi.boolean().default(false));
     }
@@ -53,7 +53,14 @@ export class Command extends Commands.Command {
                 break;
             }
             default: {
-                data.forEach(item => console.table(item));
+                const transform = (
+                    ({ round, height, forgedTime, netReward, address, payeeType, validVote, allotment, bookedTime, settledTime }) => 
+                    ({ round, height, forgedTime, netReward, address, payeeType, validVote, allotment, bookedTime, settledTime })
+                );
+                const summaryData = data.map((e: any) => transform(e));
+                this.components.table(["round", "height", "forgedTime","netReward", "address", "type", "validVote","allotment", "bookedTime", "settledTime"], (table) => {
+                    summaryData.forEach(e => table.push(Object.values(e)));
+                });
             }
         }
     }

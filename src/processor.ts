@@ -330,7 +330,7 @@ export class Processor {
                                     lastVoterAllocation.forEach(v => v.allotment = validVotes.isZero() ? 
                                         Utils.BigNumber.ZERO : netReward.times(Math.round(v.shareRatio * 100)).div(10000).times(v.validVote).div(validVotes)
                                     );
-                                    // console.log("lastVoterAllocation after");console.log(lastVoterAllocation);                                    
+                                    // console.log("lastVoterAllocation after");console.log(lastVoterAllocation);
                                     this.sqlite.updateValidVote(lastVoterAllocation);
                                 }
                             }
@@ -408,7 +408,7 @@ export class Processor {
                 const voter_roll = await this.transactionRepository.getDelegateVotesByHeight(block.height, generator, block.generatorPublicKey); // TODO: needs optimization.
                 this.logger.debug(`(LL) voter roll retrieved from blockchain (Solar db) in ${msToHuman(Date.now() - tick)}`);
                 tick = Date.now();
-                const lastVoterAllocation: IAllocation[] = await this.sqlite.getAllVotersLastRecord();
+                const lastVoterAllocation: IAllocation[] = await this.sqlite.getAllVotersLastRecord(); // TODO: needs optimization.
                 this.logger.debug(`(LL) voters last known balances retrieved from LazyLedger db in ${msToHuman(Date.now() - tick)}`);
                 tick = Date.now();
                 let voterIndex=1;
@@ -516,7 +516,7 @@ export class Processor {
                 allocations.push({
                     height: block.height,
                     address: v.address,
-                    payeeType: PayeeTypes.voter,  
+                    payeeType: PayeeTypes.voter,
                     balance: v.balance,
                     orgBalance: v.balance,
                     votePercent: v.percent,
@@ -524,6 +524,7 @@ export class Processor {
                     validVote: v.validVote,
                     shareRatio: plan.share,
                     allotment: validVotes.isZero() ? Utils.BigNumber.ZERO : netReward.times(Math.round(plan.share * 100)).div(10000).times(v.validVote).div(validVotes),
+                    // orgAllotment: validVotes.isZero() ? Utils.BigNumber.ZERO : netReward.times(Math.round(plan.share * 100)).div(10000).times(v.validVote).div(validVotes),
                     booked: timeNow,
                     transactionId: "",
                     settled: 0
