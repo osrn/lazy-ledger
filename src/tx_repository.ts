@@ -19,11 +19,11 @@ export class TxRepository {
     }
 
     /**
-     * Retrieves a delegate's voters along with their voting weights at a given block height
+     * Retrieves a bp's voters along with their voting weights at a given block height
      * 
      * @param end - block height
-     * @param username - delegate username
-     * @param public_key - delegate public key
+     * @param username - bp username
+     * @param public_key - bp public key
      * @returns Promise<{object}[]> - voter public key, vote weight
      */
     public async getDelegateVotesByHeight(end: number, username: string, public_key: string): Promise<{ publicKey: string; percent: number }[]> {
@@ -35,7 +35,8 @@ export class TxRepository {
                 -- get most recent vote transactions of these voters at the same block height
                 SELECT DISTINCT ON (q2.sender_public_key) q2.sender_public_key, q2.block_height, q2.asset->'votes' AS voting_for
                 FROM transactions q2 INNER JOIN (
-                    -- find all delegates voters at a given block height
+                    -- find all voters of the bp at a given block height
+                    -- PostgreSQL provides the DISTINCT ON (expression) to keep the “first” row of each group of duplicates
                     SELECT DISTINCT ON (sender_public_key) sender_public_key, block_height
                     FROM transactions
                     WHERE ((type_group=${Enums.TransactionTypeGroup.Solar} AND type=${Enums.TransactionType.Solar.Vote}) 
@@ -49,7 +50,7 @@ export class TxRepository {
                 AND q2.block_height <= ${end}
                 ORDER BY q2.sender_public_key ASC, q2.block_height DESC
             ) AS q1
-            -- filter out those who no longer vote for the delegate
+            -- filter out those who no longer vote for the bp
             WHERE REGEXP_REPLACE(q1.voting_for::text, '[+]','')::jsonb ?| array['${username}', '${public_key}']
             ORDER BY q1.sender_public_key ASC;`;
             
