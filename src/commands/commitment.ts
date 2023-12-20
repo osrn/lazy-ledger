@@ -60,7 +60,7 @@ Voters(avg): ${range.avgVoterCount}\n`);
         // Filter for only committed voters
         const addresses = voterCommitment.filter(al => al.blocksVoteNotReduced === al.blockCount).map(al => al.address);
         // List committed voter addresses and valid voting balances at first block of the range
-        sqlite.getAllVotersRecordAtHeight(range.firstForged)
+        sqlite.getAllVotersRecordsAtHeight(range.firstForged)
               .filter(item => addresses.includes(item.address) && !item.validVote.isZero())
               .sort((n1,n2) => n1.address >= n2.address ? 1:-1 ) // not care about equal strings as they are sorted already:
               .forEach(item => console.log(item.address, item.validVote.toFixed()));
