@@ -26,14 +26,15 @@ export class TxRepository {
      * @param public_key - bp public key
      * @returns Promise<{object}[]> - voter public key, vote weight
      */
-    public async getDelegateVotesByHeight(end: number, username: string, public_key: string): Promise<{ publicKey: string; percent: number }[]> {
+    public async getDelegateVotesByHeight(end: number, username: string, public_key: string): Promise<{ address: string; publicKey: string; percent: number }[]> {
+        // TODO: query needs optimization.
         const query = 
            `SELECT
-                q1.sender_public_key AS "publicKey", 
+           q1.sender_id AS "address", q1.sender_public_key AS "publicKey", 
                 (CASE WHEN jsonb_typeof(q1.voting_for) = 'array' THEN 100::numeric ELSE (q1.voting_for->'${username}')::numeric END) AS percent
             FROM (
                 -- get most recent vote transactions of these voters at the same block height
-                SELECT DISTINCT ON (q2.sender_public_key) q2.sender_public_key, q2.block_height, q2.asset->'votes' AS voting_for
+                SELECT DISTINCT ON (q2.sender_public_key) q2.sender_id, q2.sender_public_key, q2.block_height, q2.asset->'votes' AS voting_for
                 FROM transactions q2 INNER JOIN (
                     -- find all voters of the bp at a given block height
                     -- PostgreSQL provides the DISTINCT ON (expression) to keep the “first” row of each group of duplicates

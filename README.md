@@ -463,6 +463,11 @@ You are welcome to make any other accuracy checks by direct database query.
 
 ## Version Info
 
+### Release 0.2.1
+#### Changes
+- database index creation moved to worker-threads to prevent unnecessary delaying the relay process start
+- improved performance during retrieval of bp votes at a past block 
+
 ### Release 0.2.0
 #### Before upgrading
 1. stop relay `pm2 stop solar-relay`

@@ -41,14 +41,51 @@ export class Database {
     
     public async boot(): Promise<void> {
         this.init();
+        this.taskQueue = new DbTaskQueue(this.dbpath, taskQueueSize, this.logger);
         //NOTE: SQLITE fields data type definitions are just for documentation purposes by SQLite Design
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
+        this.logger.info("(LL)[Database] creating tables ...");
         this.database.exec(`
 PRAGMA journal_mode=WAL;
-CREATE TABLE IF NOT EXISTS forged_blocks (round INTEGER NOT NULL, height INTEGER NOT NULL PRIMARY KEY, timestamp NUMERIC NOT NULL, delegate TEXT NOT NULL, reward TEXT NOT NULL, solfunds TEXT NOT NULL, fees TEXT NOT NULL, burnedFees TEXT NOT NULL, votes TEXT, validVotes TEXT, orgValidVotes TEXT, voterCount INTEGER) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS missed_blocks (round INTEGER NOT NULL, height INTEGER NOT NULL, delegate TEXT NOT NULL, timestamp NUMERIC PRIMARY KEY NOT NULL) WITHOUT ROWID;
-CREATE TABLE IF NOT EXISTS allocations (height INTEGER NOT NULL, address TEXT NOT NULL, payeeType INTEGER NOT NULL, balance TEXT NOT NULL, orgBalance TEXT NOT NULL, votePercent INTEGER NOT NULL, orgVotePercent INTEGER NOT NULL, validVote TEXT NOT NULL, shareRatio INTEGER, allotment TEXT, booked NUMERIC, transactionId TEXT, settled NUMERIC, PRIMARY KEY (height, address, payeeType));
-CREATE INDEX IF NOT EXISTS forged_blocks_delegate_timestamp ON forged_blocks (delegate, timestamp);
+CREATE TABLE IF NOT EXISTS forged_blocks (
+    round INTEGER NOT NULL,
+    height INTEGER NOT NULL PRIMARY KEY,
+    timestamp NUMERIC NOT NULL,
+    delegate TEXT NOT NULL,
+    reward TEXT NOT NULL,
+    solfunds TEXT NOT NULL,
+    fees TEXT NOT NULL,
+    burnedFees TEXT NOT NULL,
+    votes TEXT,
+    validVotes TEXT,
+    orgValidVotes TEXT,
+    voterCount INTEGER);
+CREATE TABLE IF NOT EXISTS missed_blocks (
+    round INTEGER NOT NULL,
+    height INTEGER NOT NULL,
+    delegate TEXT NOT NULL,
+    timestamp NUMERIC PRIMARY KEY NOT NULL);
+CREATE TABLE IF NOT EXISTS allocations (
+    height INTEGER NOT NULL,
+    address TEXT NOT NULL,
+    payeeType INTEGER NOT NULL,
+    balance TEXT NOT NULL,
+    orgBalance TEXT NOT NULL,
+    votePercent INTEGER NOT NULL,
+    orgVotePercent INTEGER NOT NULL,
+    validVote TEXT NOT NULL,
+    shareRatio INTEGER,
+    allotment TEXT,
+    booked NUMERIC,
+    transactionId TEXT,
+    settled NUMERIC,
+    PRIMARY KEY (height, address, payeeType)
+);`
+        );
+
+        this.logger.info("(LL)[Database] creating indexes (this may take a while during first boot after an upgrade, pleas be patient) ..");
+        let sqlstr = `
+CREATE INDEX IF NOT EXISTS forged_blocks_delegate_timestamp ON forged_blocks (delegate, "timestamp");
 CREATE INDEX IF NOT EXISTS forged_blocks_delegate_round on forged_blocks (delegate, round);
 CREATE INDEX IF NOT EXISTS forged_blocks_timestamp ON forged_blocks ("timestamp");
 CREATE INDEX IF NOT EXISTS forged_blocks_round_height_timestamp ON forged_blocks (round,height,"timestamp");
@@ -57,7 +94,31 @@ CREATE INDEX IF NOT EXISTS allocations_transactionId ON allocations (transaction
 CREATE INDEX IF NOT EXISTS allocations_booked ON allocations (booked);
 CREATE INDEX IF NOT EXISTS allocations_settled ON allocations (settled);
 CREATE INDEX IF NOT EXISTS allocations_address ON allocations (address);
-CREATE VIEW IF NOT EXISTS missed_rounds AS SELECT missed_blocks.* FROM missed_blocks LEFT OUTER JOIN forged_blocks ON missed_blocks.delegate = forged_blocks.delegate AND missed_blocks.round = forged_blocks.round WHERE forged_blocks.delegate IS NULL;
+CREATE INDEX IF NOT EXISTS allocations_address_payeetype_height ON allocations (address, payeeType, height);
+`;
+        const job: IWorkerJob = {
+            id: new ObjectId().toHexString(),
+            customer: "dbCreateIndexes",
+            data: sqlstr,
+        };
+        try {
+            await this.taskQueue.addTask(job);
+        } 
+        catch (error) {
+            this.logger.critical("(LL) Error creating indexes");
+            this.logger.critical(error.message);
+            this.dc.sendmsg(`${emoji.biohazard_sign} Error creating database indexes`);
+        }
+        
+        this.logger.info("(LL)[Database] (re)creating views ..");
+        this.database.exec(`
+CREATE VIEW IF NOT EXISTS missed_rounds AS
+SELECT missed_blocks.*
+FROM missed_blocks
+LEFT OUTER JOIN forged_blocks
+   ON missed_blocks.delegate = forged_blocks.delegate
+  AND missed_blocks.round = forged_blocks.round
+WHERE forged_blocks.delegate IS NULL;
 DROP VIEW IF EXISTS forged_blocks_human;
 CREATE VIEW forged_blocks_human AS
 SELECT
@@ -167,11 +228,9 @@ LEFT JOIN (
         CAST(validVotes AS INTEGER) AS bpFinalValidVoteTotal
     FROM forged_blocks
 ) AS fb 
-ON al.height = fb.height;
-        `);
+ON al.height = fb.height;`);
         this.database.pragma("journal_mode = WAL");
         this.triggers(true);
-        this.taskQueue = new DbTaskQueue(this.dbpath, taskQueueSize, this.logger);
         this.logger.info("(LL) Database boot complete");
     }
 
@@ -221,9 +280,9 @@ ON al.height = fb.height;
         return result || "";
     }
     
-    public getAllVotersRecordAtHeight(height: number = 0): IAllocation[] {
+    public getAllVotersRecordsAtHeight(height: number = 0): IAllocation[] {
         const result = this.database
-            .prepare(`SELECT * FROM allocations WHERE height=${height ? height : "(SELECT MAX(height) FROM allocations)"} AND payeeType=${PayeeTypes.voter}`)
+            .prepare(`SELECT * FROM allocations WHERE height=${height ? height : "(SELECT MAX(height) FROM allocations)"} AND payeeType = ${PayeeTypes.voter}`)
             .all();
         
         (result as unknown as IAllocation[]).forEach(r => { 
@@ -235,7 +294,7 @@ ON al.height = fb.height;
         return result;
     }
     
-    public getVotersLastRecord(address: string): IAllocation {
+    public getVoterLastRecord(address: string): IAllocation {
         const result = this.database
             .prepare(`SELECT * FROM allocations WHERE address='${address}' ORDER BY height DESC LIMIT 1`)
             .get();
@@ -248,22 +307,19 @@ ON al.height = fb.height;
         }
         return result || "";
     }
-    
-    public async getAllVotersLastRecord(): Promise<IAllocation[]> {
+
+    public async getSomeVotersLastRecords(addresses: string[]): Promise<IAllocation[]> {
         const sqlstr = 
-            `SELECT m.* FROM allocations m INNER JOIN (
-                SELECT address, MAX(height) as height from allocations
-                WHERE payeeType = 1
+           `SELECT m.* FROM allocations m INNER JOIN (
+                SELECT rowid, address, MAX(height) as height from allocations 
+                WHERE address IN (${[...addresses.map(e => `'${e}'`)]}) AND payeeType = ${PayeeTypes.voter}
                 GROUP BY address
-            ) AS g
-            ON m.address = g.address
-            AND m.height = g.height
-            WHERE payeeType = 1
-            ORDER by m.height ASC`;
+            ) AS g ON m.rowid = g.rowid
+            ORDER by m.height DESC`;
 
         const job: IWorkerJob = {
             id: new ObjectId().toHexString(),
-            customer: "getAllVotersLastAllocation",
+            customer: "getSomeVotersLastRecords",
             data: sqlstr,
         }
         try {
@@ -280,6 +336,45 @@ ON al.height = fb.height;
             this.logger.critical("(LL) Error retrieving voters' last allocation from the database");
             this.logger.critical(error.message);
             this.dc.sendmsg(`${emoji.biohazard_sign} Error retrieving voters' last allocation from the database`);
+            return [];
+        }
+    }
+
+    public async getAllVotersLastRecords(): Promise<IAllocation[]> {
+        const sqlstr = 
+           `SELECT m.* FROM allocations m INNER JOIN (
+                SELECT rowid, address, MAX(height) as height from allocations 
+                WHERE payeeType = ${PayeeTypes.voter}
+                GROUP BY address
+            ) AS g ON m.rowid = g.rowid
+            ORDER by m.height DESC`;
+            // `SELECT m.* FROM allocations m INNER JOIN (
+            //     SELECT address, MAX(height) as height from allocations
+            //     WHERE payeeType = ${PayeeTypes.voter}
+            //     GROUP BY address
+            // ) AS g ON m.address = g.address AND m.height = g.height
+            // WHERE payeeType = ${PayeeTypes.voter}
+            // ORDER by m.height DESC`;
+
+        const job: IWorkerJob = {
+            id: new ObjectId().toHexString(),
+            customer: "getAllVotersLastRecords",
+            data: sqlstr,
+        }
+        try {
+            const result: IAllocation[] = (await this.taskQueue.addTask(job)) as unknown as IAllocation[];
+            result.forEach(r => { 
+                r.balance = Utils.BigNumber.make(r.balance);
+                r.orgBalance = Utils.BigNumber.make(r.orgBalance);
+                r.allotment = Utils.BigNumber.make(r.allotment);
+                r.validVote = Utils.BigNumber.make(r.validVote);
+            });
+            return result;
+        } 
+        catch (error) {
+            this.logger.critical("(LL) Error retrieving voters' last allocations from the database");
+            this.logger.critical(error.message);
+            this.dc.sendmsg(`${emoji.biohazard_sign} Error retrieving voters' last allocations from the database`);
             return [];
         }
     }
@@ -363,7 +458,7 @@ ON al.height = fb.height;
             FROM forged_blocks fb INNER JOIN (
                 SELECT height, address, validVote, lead(validVote,1,0) OVER (PARTITION BY address ORDER BY height) as nextVote
                 FROM allocations
-                WHERE payeeType = 1
+                WHERE payeeType = ${PayeeTypes.voter}
                 AND votePercent > 0
             ) AS al 
             ON fb.height = al.height

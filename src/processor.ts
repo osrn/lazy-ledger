@@ -247,7 +247,7 @@ export class Processor {
                         }
                         const whitelist = [...config.whitelist, config.bpWalletAddress];
                         const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
-                        const lastVoterAllocation: IAllocation[] = this.sqlite.getAllVotersRecordAtHeight();
+                        const lastVoterAllocation: IAllocation[] = this.sqlite.getAllVotersRecordsAtHeight();
 
                         if (lastForgedBlock && lastVoterAllocation.length > 0) { // always true unless you are a brand new bp
                             const txRound = AppUtils.roundCalculator.calculateRound(txData.blockHeight!);
@@ -302,7 +302,7 @@ export class Processor {
                         await setTimeout(100);
                     }
                     const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
-                    const lastVoterAllocation: IAllocation[] = this.sqlite.getAllVotersRecordAtHeight();
+                    const lastVoterAllocation: IAllocation[] = this.sqlite.getAllVotersRecordsAtHeight();
                     
                     if (lastForgedBlock && lastVoterAllocation.length > 0) { // always true unless brand new bp
                         const txRound = AppUtils.roundCalculator.calculateRound(data.transaction.blockHeight);
@@ -378,7 +378,7 @@ export class Processor {
             const voters: { height:number; address: string; balance: Utils.BigNumber; percent: number; vote: Utils.BigNumber; validVote: Utils.BigNumber}[] = [];
 
             const lastChainedBlockHeight: number = await this.getLastBlockHeight();
-            this.logger.debug(`(LL) Last chained: #${lastChainedBlockHeight} | Now processing block round:${round.round } height:${block.height} timestamp:${block.timestamp} bp: ${generator} reward:${block.reward} solfunds:${solfunds} block_fees:${block.totalFee} burned_fees:${block.burnedFee}`)
+            this.logger.debug(`(LL) Now processing block #${block.height} of round ${round.round } | timestamp:${block.timestamp} bp: ${generator} reward:${block.reward} solfunds:${solfunds} block_fees:${block.totalFee} burned_fees:${block.burnedFee} | (Last chained: #${lastChainedBlockHeight})`)
 
             const plan = this.configHelper.getPlan(block.height, block.timestamp);
             const config = this.configHelper.getConfig();
@@ -404,37 +404,38 @@ export class Processor {
                             validVote: validVote
                         }
                     });
-                this.logger.debug(`(LL) voter roll and voter balances retrieved from blockrepository (live) in ${msToHuman(Date.now() - tick)}`);
+                this.logger.debug(`(LL) voter roll and voter balances retrieved from walletrepository (live) in ${msToHuman(Date.now() - tick)}`);
                 voters.push(...myVoters);
             }
             else {
-                const voter_roll = await this.transactionRepository.getDelegateVotesByHeight(block.height, generator, block.generatorPublicKey); // TODO: needs optimization.
+                const voter_roll: { address: string; publicKey: string; percent: number }[] = await this.transactionRepository.getDelegateVotesByHeight(block.height, generator, block.generatorPublicKey); // TODO: needs optimization.
                 this.logger.debug(`(LL) voter roll retrieved from blockchain (Solar db) in ${msToHuman(Date.now() - tick)}`);
                 tick = Date.now();
-                const lastVoterAllocation: IAllocation[] = await this.sqlite.getAllVotersLastRecord(); // TODO: needs optimization.
+                // const lastVoterAllocation: IAllocation[] = await this.sqlite.getAllVotersLastRecord();
+                const lastVoterRecord: IAllocation[] = await this.sqlite.getSomeVotersLastRecords(voter_roll.map(v => v.address!));
                 this.logger.debug(`(LL) voters last known balances retrieved from LazyLedger db in ${msToHuman(Date.now() - tick)}`);
                 tick = Date.now();
                 let voterIndex=1;
                 for (const v of voter_roll) {
                     const tick2 = Date.now();
-                    const walletAddress: string = this.walletRepository.findByPublicKey(v.publicKey).getAddress();
+                    // const walletAddress: string = this.walletRepository.findByPublicKey(v.publicKey).getAddress();
                     let startFrom: number = 0;
                     let prevBalance: Utils.BigNumber = Utils.BigNumber.ZERO;
-                    if (lastVoterAllocation.length > 0 && lastVoterAllocation[0].height < block.height) {
-                        const vrecord: IAllocation | undefined = lastVoterAllocation.find( v => v.address ===walletAddress);
+                    if (lastVoterRecord.length > 0 && lastVoterRecord[0].height < block.height) {
+                        const vrecord: IAllocation | undefined = lastVoterRecord.find( e => e.address === v.address! );
                         if (vrecord) {
                             startFrom = vrecord.height;
                             prevBalance = vrecord.orgBalance;
                         }
                     }
-                    const walletBalance = prevBalance.plus(await this.transactionRepository.getNetBalanceByHeightRange(startFrom, block.height, walletAddress, v.publicKey));
+                    const walletBalance = prevBalance.plus(await this.transactionRepository.getNetBalanceByHeightRange(startFrom, block.height, v.address!, v.publicKey));
                     const vote = walletBalance.times(Math.round(v.percent * 100)).div(10000);
-                    const validVote = vote.isLessThan(plan.mincapSatoshi) || plan.blacklist.includes(walletAddress) ? 
+                    const validVote = vote.isLessThan(plan.mincapSatoshi) || plan.blacklist.includes(v.address) ? 
                         Utils.BigNumber.ZERO : (plan.maxcapSatoshi && vote.isGreaterThan(plan.maxcapSatoshi) ? plan.maxcapSatoshi : vote);
     
                     voters.push({
                         height: block.height,
-                        address: walletAddress,
+                        address: v.address,
                         balance: walletBalance,
                         percent: v.percent,
                         vote: vote,
@@ -552,13 +553,13 @@ export class Processor {
         const tick0 = Date.now();
         let loop: boolean = true;
         while (loop) {
-            let tick1 = Date.now();
+            // let tick1 = Date.now();
             const lastChainedBlockHeight: number = await this.getLastBlockHeight();
-            this.logger.debug(`lastChainedBlockHeight retrieved in ${msToHuman(Date.now() - tick1)}`);
+            // this.logger.debug(`lastChainedBlockHeight retrieved in ${msToHuman(Date.now() - tick1)}`);
             // const lastForgedBlockHeight: number = await this.getLastForgedBlockHeight();
-            tick1 = Date.now();
+            // tick1 = Date.now();
             const lastForgedBlock: Interfaces.IBlockData | undefined = await this.getLastForgedBlock();
-            this.logger.debug(`lastForgedBlock retrieved in ${msToHuman(Date.now() - tick1)}`);
+            // this.logger.debug(`lastForgedBlock retrieved in ${msToHuman(Date.now() - tick1)}`);
             const lastForgedBlockHeight: number = lastForgedBlock ? lastForgedBlock!.height : 0;
             const ourEpoch = this.configHelper.getFirstAllocatingPlan()?.height || 0; // NOTE TO SELF: must be run after async calls above
 

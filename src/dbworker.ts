@@ -53,13 +53,31 @@ function init() {
  */
 function run(query: string) {
     // logger.trace(`running the sql query...`);
+    if (!query || query.length === 0) throw new Error(`empty string passed for query`);
     if (!sqlite) throw new Error(`database connection is not initialized`);
     try {
-        const result = sqlite.prepare(query).all();
-        parentPort?.postMessage({ type: "result", data: result });
+        let queries = query.replace(/\n/g,'') // strip line breaks
+                           .replace(/;$/,'') // strip the last ; if exist, to prevent the last array element being empty when split
+                           .split(";"); // split into individual SQL statements
+        if (queries.length > 1) {
+            // passed query contains multiple SQL statements
+            logger.trace(`received a multi statement query of (${queries.length} statements)`);
+            let i=1;
+            for (const q of queries) {
+                logger.trace(`running ${i}/${queries.length}: ${q}`);
+                const result = sqlite.prepare(q).run();
+                logger.trace(`${i}/${queries.length} result: ${JSON.stringify(result)}`);
+                i++;
+            }
+            parentPort?.postMessage({ type: "result", data: "" });
+        }
+        else {
+            const result = sqlite.prepare(query).all();
+            parentPort?.postMessage({ type: "result", data: result });
+        }
     }
     catch (err) {
-        throw new Error(`query execution failed! Error: ${err.stack}`);
+        throw new Error(`execution of query ${query} failed! Error: ${err.stack}`);
     }
 }
 
