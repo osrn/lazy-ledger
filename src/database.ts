@@ -282,7 +282,7 @@ ON al.height = fb.height;`);
     
     public getAllVotersRecordsAtHeight(height: number = 0): IAllocation[] {
         const result = this.database
-            .prepare(`SELECT * FROM allocations WHERE height=${height ? height : "(SELECT MAX(height) FROM allocations)"} AND payeeType=${PayeeTypes.voter}`)
+            .prepare(`SELECT * FROM allocations WHERE height=${height ? height : "(SELECT MAX(height) FROM allocations)"} AND payeeType = ${PayeeTypes.voter}`)
             .all();
         
         (result as unknown as IAllocation[]).forEach(r => { 
@@ -311,11 +311,10 @@ ON al.height = fb.height;`);
     public async getSomeVotersLastRecords(addresses: string[]): Promise<IAllocation[]> {
         const sqlstr = 
            `SELECT m.* FROM allocations m INNER JOIN (
-                SELECT address, MAX(height) as height from allocations 
-                WHERE address IN (${[...addresses.map(e => `'${e}'`)]}) AND payeeType = 1
+                SELECT rowid, address, MAX(height) as height from allocations 
+                WHERE address IN (${[...addresses.map(e => `'${e}'`)]}) AND payeeType = ${PayeeTypes.voter}
                 GROUP BY address
-            ) AS g ON m.address = g.address AND m.height = g.height
-            WHERE payeeType = 1
+            ) AS g ON m.rowid = g.rowid
             ORDER by m.height DESC`;
 
         const job: IWorkerJob = {
@@ -343,13 +342,19 @@ ON al.height = fb.height;`);
 
     public async getAllVotersLastRecords(): Promise<IAllocation[]> {
         const sqlstr = 
-            `SELECT m.* FROM allocations m INNER JOIN (
-                SELECT address, MAX(height) as height from allocations
-                WHERE payeeType = 1
+           `SELECT m.* FROM allocations m INNER JOIN (
+                SELECT rowid, address, MAX(height) as height from allocations 
+                WHERE payeeType = ${PayeeTypes.voter}
                 GROUP BY address
-            ) AS g ON m.address = g.address AND m.height = g.height
-            WHERE payeeType = 1
+            ) AS g ON m.rowid = g.rowid
             ORDER by m.height DESC`;
+            // `SELECT m.* FROM allocations m INNER JOIN (
+            //     SELECT address, MAX(height) as height from allocations
+            //     WHERE payeeType = ${PayeeTypes.voter}
+            //     GROUP BY address
+            // ) AS g ON m.address = g.address AND m.height = g.height
+            // WHERE payeeType = ${PayeeTypes.voter}
+            // ORDER by m.height DESC`;
 
         const job: IWorkerJob = {
             id: new ObjectId().toHexString(),
@@ -453,7 +458,7 @@ ON al.height = fb.height;`);
             FROM forged_blocks fb INNER JOIN (
                 SELECT height, address, validVote, lead(validVote,1,0) OVER (PARTITION BY address ORDER BY height) as nextVote
                 FROM allocations
-                WHERE payeeType = 1
+                WHERE payeeType = ${PayeeTypes.voter}
                 AND votePercent > 0
             ) AS al 
             ON fb.height = al.height

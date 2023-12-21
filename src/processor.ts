@@ -378,7 +378,7 @@ export class Processor {
             const voters: { height:number; address: string; balance: Utils.BigNumber; percent: number; vote: Utils.BigNumber; validVote: Utils.BigNumber}[] = [];
 
             const lastChainedBlockHeight: number = await this.getLastBlockHeight();
-            this.logger.debug(`(LL) Last chained: #${lastChainedBlockHeight} | Now processing block round:${round.round } height:${block.height} timestamp:${block.timestamp} bp: ${generator} reward:${block.reward} solfunds:${solfunds} block_fees:${block.totalFee} burned_fees:${block.burnedFee}`)
+            this.logger.debug(`(LL) Now processing block #${block.height} of round ${round.round } | timestamp:${block.timestamp} bp: ${generator} reward:${block.reward} solfunds:${solfunds} block_fees:${block.totalFee} burned_fees:${block.burnedFee} | (Last chained: #${lastChainedBlockHeight})`)
 
             const plan = this.configHelper.getPlan(block.height, block.timestamp);
             const config = this.configHelper.getConfig();
@@ -553,13 +553,13 @@ export class Processor {
         const tick0 = Date.now();
         let loop: boolean = true;
         while (loop) {
-            let tick1 = Date.now();
+            // let tick1 = Date.now();
             const lastChainedBlockHeight: number = await this.getLastBlockHeight();
-            this.logger.debug(`lastChainedBlockHeight retrieved in ${msToHuman(Date.now() - tick1)}`);
+            // this.logger.debug(`lastChainedBlockHeight retrieved in ${msToHuman(Date.now() - tick1)}`);
             // const lastForgedBlockHeight: number = await this.getLastForgedBlockHeight();
-            tick1 = Date.now();
+            // tick1 = Date.now();
             const lastForgedBlock: Interfaces.IBlockData | undefined = await this.getLastForgedBlock();
-            this.logger.debug(`lastForgedBlock retrieved in ${msToHuman(Date.now() - tick1)}`);
+            // this.logger.debug(`lastForgedBlock retrieved in ${msToHuman(Date.now() - tick1)}`);
             const lastForgedBlockHeight: number = lastForgedBlock ? lastForgedBlock!.height : 0;
             const ourEpoch = this.configHelper.getFirstAllocatingPlan()?.height || 0; // NOTE TO SELF: must be run after async calls above
 
