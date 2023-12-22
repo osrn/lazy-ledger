@@ -477,13 +477,13 @@ ON al.height = fb.height;`);
      * @param network 
      * @returns 
      */
-    public getAntibot(start: number, end: number, network?: Types.NetworkName): {address: string; blockcount: number; allotted: Utils.BigNumber}[] {
+    public getAntibot(start: number, end: number, network?: Types.NetworkName): {address: string; blockcount: number; orgAllotted: Utils.BigNumber; allotted: Utils.BigNumber}[] {
         if (typeof network !== "undefined" && Object.keys(Networks).includes(network!)) {
             Managers.configManager.setFromPreset(network!);
         } 
         const t0 = Math.floor(new Date(Managers.configManager.getMilestone().epoch).getTime() / 1000);
         const result = this.database.prepare(
-            `SELECT address, COUNT(address) as blockcount, SUM(orgAllotment) as orgAllotted, SUM(finalAllotment) as allotted
+           `SELECT address, COUNT(address) as blockcount, SUM(orgAllotment) as orgAllotted, SUM(finalAllotment) as allotted
             FROM newLedger
             WHERE (${t0} + forgedSolarts) >= ${start}
               AND (${t0} + forgedSolarts) < ${end} 
@@ -506,7 +506,7 @@ ON al.height = fb.height;`);
      * @param network 
      * @returns 
      */
-    public scanBots(addresses: string[], start: number, end: number, network?: Types.NetworkName): {address: string; blockcount: number; allotted: Utils.BigNumber}[] {
+    public scanBots(addresses: string[], start: number, end: number, network?: Types.NetworkName): {address: string; blockcount: number; orgAllotted: Utils.BigNumber; allotted: Utils.BigNumber}[] {
         if (typeof network !== "undefined" && Object.keys(Networks).includes(network!)) {
             Managers.configManager.setFromPreset(network!);
         } 

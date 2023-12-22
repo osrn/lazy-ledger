@@ -6,6 +6,7 @@ import Joi from "joi";
 import os from "os";
 import { Database } from "../database";
 import { joiRules } from "../confighelper";
+import { objArrayPivotSum } from "../utils";
 
 @Container.injectable()
 export class Command extends Commands.Command {
@@ -71,10 +72,17 @@ export class Command extends Commands.Command {
         const sqlite = new Database();
         sqlite.init(this.app.getCorePath("data"));
         const data = sqlite.scanBots(addresses, start, end, network);
-        // list.forEach( e => { e.allotted = Utils.formatSatoshi(e.allotted) });
+
         this.components.log(`Scan matched ${data.length} records in the ledger during the specified time frame:
 [date)     : [${new Date(startDate).toISOString()}, ${new Date(endDate).toISOString()})
 [unixstamp): [${start}, ${end})`);
+
+        if (data.length === 0) return;
+
+        const pivot: [ { orgAllotted: Utils.BigNumber; allotted: Utils.BigNumber }] = objArrayPivotSum(data, [], ['orgAllotted', 'allotted']) as unknown as [ { orgAllotted: Utils.BigNumber; allotted: Utils.BigNumber }];
+        this.components.log(`\
+total rewards called        : ${Utils.formatSatoshi(pivot[0].orgAllotted)}
+total allotted after antibot: ${Utils.formatSatoshi(pivot[0].allotted)}`);
 
         const format = this.getFlag("raw") ? "raw" : (this.getFlag("json") ? "json" : this.getFlag("format"));
         switch (format) {
