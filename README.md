@@ -18,7 +18,7 @@ All timestamps are unix except forged time, which is Solar epochstamp.
 
 [^3]: valid amount after mincap, maxcap, blacklist and anti-bot processing
 
-Following the boot sequence plugin retrieves all past forged blocks from the core database, calculating stakeholders and allocations valid for the block's height & timestamp using the corresponding plan. Only blocks forged after first plan with non-zero allocation are retrieved for the sake of first-time synchronisation duration. Following initial sync, Ledger is updated in real time triggered by the core events.
+Following the boot sequence plugin retrieves all past forged blocks from the core database, calculating stakeholders and allocations valid for the block's height & timestamp using the corresponding plan. Only blocks forged after first plan with non-zero allocation are retrieved for the sake of first-time synchronisation duration (:important: this plan should define a height, not time stamp). Following initial sync, Ledger is updated in real time triggered by the core events.
 
 Governed by the plan parameters, a periodic payment job distributes rewards to the stakeholders. Transaction fees are calculated dynamically. Transfer recipients and pool sender limits are respected. A debt is only settled when the corresponding reward payment transaction is forged, but unsettled back should the transaction is reverted afterwards.
 
@@ -462,6 +462,10 @@ then compare `balance|orgBalance`, `votePercent|orgVotePercent` and `vote|validV
 You are welcome to make any other accuracy checks by direct database query.
 
 ## Version Info
+### Release 0.2.2
+#### Changes
+- feat: sums in antibot and botscan commands
+- bugfix: LL cannot sync to network height if BP have not been forging (e.g. rank > 53) for longer than 10,000 blocks
 
 ### Release 0.2.1
 #### Changes
@@ -580,6 +584,7 @@ Not necessarily in this order;
 - [ ] Reload config without relay restart
 - [ ] Web dashboard
 - [ ] Payment periods > 24h
+- [ ] Allow timestamp in first non-zero allocation plan 
 - [X] ~~Telegram~~|Discord notifications
 - [X] Command to list antibot detected vote hoppers
 - [X] Custom transaction memo

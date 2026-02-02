@@ -11,7 +11,7 @@ import { Teller, tellerSymbol } from "./teller";
 import { TxRepository, txRepositorySymbol } from "./tx_repository";
 import { name, version } from "./package-details.json";
 import { msToHuman } from "./utils";
-import {setTimeout} from "node:timers/promises";
+import { setTimeout as sleep } from "node:timers/promises";
 
 export const processorSymbol = Symbol.for("LazyLedger<Processor>");
 
@@ -180,7 +180,7 @@ export class Processor {
             handle: async ({ data }) => {
                 // wait until block is in block repository
                 while (data.height > (await this.getLastBlockHeight())) {
-                    await setTimeout(100);
+                    await sleep(100);
                 }
                 
                 if (this.configHelper.getConfig().bpWalletPublicKey === data.generatorPublicKey) {
@@ -223,7 +223,7 @@ export class Processor {
                 if (txData.typeGroup == Enums.TransactionTypeGroup.Core && txData.type == Enums.TransactionType.Core.Transfer) {
                     // wait until block is in block repository
                     while (txData.blockHeight! > (await this.getLastBlockHeight())) {
-                        await setTimeout(100);
+                        await sleep(100);
                     }
                     const txBlock = await this.blockRepository.findByHeight(txData.blockHeight!);
                     const config: IConfig = this.configHelper.getConfig();
@@ -243,7 +243,7 @@ export class Processor {
                     // and reduce valid vote to the new wallet amount if voter wallet made an outbound transfer within the round
                     else if (config.antibot && !this.initialSync) {
                         while (this.syncing) {
-                            await setTimeout(100); //TODO: just return and not wait?
+                            await sleep(100); //TODO: just return and not wait?
                         }
                         const whitelist = [...config.whitelist, config.bpWalletAddress];
                         const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
@@ -299,7 +299,7 @@ export class Processor {
                 // and reduce the valid vote to the new voting amount
                 if (config.antibot && !this.initialSync && data.previousVotes && Object.keys(data.previousVotes).includes(config.delegate)) {
                     while (this.syncing) {
-                        await setTimeout(100);
+                        await sleep(100);
                     }
                     const lastForgedBlock: IForgedBlock = this.sqlite.getLastForged();
                     const lastVoterAllocation: IAllocation[] = this.sqlite.getAllVotersRecordsAtHeight();
@@ -378,7 +378,7 @@ export class Processor {
             const voters: { height:number; address: string; balance: Utils.BigNumber; percent: number; vote: Utils.BigNumber; validVote: Utils.BigNumber}[] = [];
 
             const lastChainedBlockHeight: number = await this.getLastBlockHeight();
-            this.logger.debug(`(LL) Now processing block #${block.height} of round ${round.round } | timestamp:${block.timestamp} bp: ${generator} reward:${block.reward} solfunds:${solfunds} block_fees:${block.totalFee} burned_fees:${block.burnedFee} | (Last chained: #${lastChainedBlockHeight})`)
+            this.logger.debug(`(LL) ${blockCounter+1}/${blocks.length} Now processing block #${block.height} of round ${round.round } | timestamp:${block.timestamp} bp: ${generator} reward:${block.reward} solfunds:${solfunds} block_fees:${block.totalFee} burned_fees:${block.burnedFee} | (Last chained: #${lastChainedBlockHeight})`)
 
             const plan = this.configHelper.getPlan(block.height, block.timestamp);
             const config = this.configHelper.getConfig();
@@ -447,7 +447,7 @@ export class Processor {
                         this.logger.debug(`(LL) Voter ${voterIndex} / ${voter_roll.length} processed in ${msToHuman(Date.now() - tick2)}`);
                     }
                     voterIndex++;
-                    // await setTimeout(100); // getNetBalanceByHeightRange may take a long time blocking the other relay processes
+                    // await sleep(100); // getNetBalanceByHeightRange may take a long time blocking the other relay processes
                 }
                 this.logger.debug(`(LL) voters balances at height ${block.height} reconstructed from blockchain (Solar db) records in ${msToHuman(Date.now() - tick)}`);
             }
@@ -586,20 +586,28 @@ export class Processor {
                 }
             }
 
-            if (lastProcessedBlockHeight < lastForgedBlockHeight && this.lastProcessedBlockHeight < lastChainedBlockHeight) { 
+            if (this.lastProcessedBlockHeight < lastForgedBlockHeight && this.lastProcessedBlockHeight < lastChainedBlockHeight) { 
                 // lastProcessedBlockHeight < lastForgedBlockHeight: are we lagging
                 // this.lastProcessedBlockHeight < lastChainedBlockHeight: has blockchain rolled-back since we last fetched from block repository
+                this.logger.debug(`(LL) retrieving blocks from height ${this.lastProcessedBlockHeight + 1} in batches of 10000 from the database`);
                 const blocks: Contracts.Shared.DownloadBlock[] = await this.database.getBlocksForDownload(
-                    lastProcessedBlockHeight + 1,
+                    this.lastProcessedBlockHeight + 1,
                     10000,
                     true);
 
+                this.logger.debug(`(LL) retrieved ${blocks.length} blocks from database from height ${this.lastProcessedBlockHeight + 1} to height ${blocks[blocks.length - 1].height} for processing`);
                 if (blocks.length) { //actually redundant when lastProcessedBlockHeight < lastChainedBlockHeight
                     const delegatesBlocks = blocks.filter((block) => block.generatorPublicKey === this.configHelper.getConfig().bpWalletPublicKey);
+                    this.logger.debug(`(LL) found ${delegatesBlocks.length} blocks belonging to delegate ${this.configHelper.getConfig().bpWalletPublicKey}`);
 
                     if (delegatesBlocks.length) {
                         await this.processBlocks(delegatesBlocks);
-                    } 
+                    }
+                    else {
+                        this.logger.debug(`(LL) found no blocks belonging to the delegate ${this.configHelper.getConfig().bpWalletPublicKey} in the retrieved block range. Skipping to next batch.`);
+                        this.lastProcessedBlockHeight = blocks[blocks.length - 1].height;
+                    }
+                    await sleep(100);
                 }
                 else {
                     loop = false;

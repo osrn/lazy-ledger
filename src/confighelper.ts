@@ -191,7 +191,7 @@ export class ConfigHelper {
         // FIXME: Assumes the plan declares a height. If a timestamp were declared instead, the function should find the first block height forged past this timestamp
         const plans = this.config.plans;
         for (let i = 0; i < plans.length; i++) {
-            if (plans[i].share > 0 || plans[i].reserves[0]?.share > 0) {
+            if (plans[i].share > 0 || plans[i].reserves.reduce((prev, next) => prev + next.share, 0) > 0) {
                 return plans[i];
             }
         }
